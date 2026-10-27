@@ -606,7 +606,11 @@ def create_app(*, background: bool = False) -> FastAPI:  # noqa: PLR0915
             ),
             Tool(
                 name="get_status",
-                description="Get the current agent status: mode, feeds_ok, exposure, PnL, paused.",
+                description=(
+                    "Get the current agent status: mode, feeds_ok, exposure, PnL, paused, feed_diag. "
+                    "When feeds_ok is false, always report feed_diag verbatim (error, cutoff, pages, total, "
+                    "kept, families, moneyline_statuses, dropped_*)."
+                ),
                 parameters={"type": "object", "properties": {}, "required": []},
                 fn=_get_status,
             ),
