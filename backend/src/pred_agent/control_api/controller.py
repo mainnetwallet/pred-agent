@@ -14,6 +14,7 @@ Phase 8 additions:
 
 from __future__ import annotations
 
+import logging
 from dataclasses import asdict, is_dataclass
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -48,6 +49,9 @@ def to_jsonable(obj: Any) -> Any:  # noqa: PLR0911
     return obj
 
 
+log = logging.getLogger(__name__)
+
+
 class AgentController:
     def __init__(self, settings: Settings,
                  db_session_factory: "sessionmaker[Session] | None" = None) -> None:
@@ -57,6 +61,10 @@ class AgentController:
             ttl_seconds=settings.proposal_ttl_seconds,
             db=ProposalRepo(db_session_factory) if db_session_factory else None,
         )
+        # LiveExecutor is not wired into this controller yet (no transport / contract
+        # address / fee lookup / reconcile). Until it is, LIVE approvals fail closed
+        # instead of marking a proposal APPROVED without ever placing an order.
+        self.live_execution_ready = False
         self.executor = PaperExecutor(
             db=OrderRepo(db_session_factory) if db_session_factory else None
         )
@@ -147,6 +155,9 @@ class AgentController:
             return None
         cap = Decimal(str(self.limits["max_trade_usd"]))
         if amount is not None and (amount <= 0 or amount > cap):
+            return None
+        if self.mode == "LIVE" and not self.live_execution_ready:
+            log.error("approve blocked: LIVE_TRADING=true but live execution is not wired")
             return None
         prop = self.proposals.approve(proposal_id, via=via, new_amount_usd=amount)
         if prop is None:

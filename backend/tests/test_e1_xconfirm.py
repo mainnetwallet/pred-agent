@@ -50,6 +50,8 @@ def test_live_panic_requires_xconfirm(monkeypatch):
 
 def test_live_approve_requires_xconfirm(monkeypatch):
     app = _live_app(monkeypatch)
+    # This test covers the X-Confirm gate only; simulate a wired live executor.
+    app.state.controller.live_execution_ready = True
     client = TestClient(app)
     headers = _authed(client)
     prop = app.state.controller.proposals.create(
@@ -139,3 +141,25 @@ def test_paper_mode_panic_without_xconfirm_allowed():
     resp = client.post("/v1/panic", headers=headers, json={})
     assert resp.status_code == 200
     assert app.state.controller.paused is True
+
+
+def test_live_approve_fails_closed_while_live_execution_unwired(monkeypatch):
+    """LIVE + no live executor wired: approve is refused (409), proposal stays pending."""
+    app = _live_app(monkeypatch)
+    assert app.state.controller.live_execution_ready is False
+    client = TestClient(app)
+    headers = _authed(client)
+    prop = app.state.controller.proposals.create(
+        mode="LIVE", advisory=False, fixture_id="fx1", market_id="mx1",
+        side="long", order_type="limit", price_cents=Decimal("52"),
+        quantity=Decimal("3.8"), amount_usd=Decimal("1.98"), est_fee_usd=Decimal("0.04"),
+        edge_pp=Decimal("5"), p_fair=Decimal("0.58"),
+        max_suggested_usd=Decimal("2"), binding_cap=None,
+    )
+    resp = client.post(
+        f"/v1/proposals/{prop.id}/approve",
+        headers={**headers, "X-Confirm": "yes"}, json={},
+    )
+    assert resp.status_code == 409
+    assert prop.status.value == "PROPOSED"
+    assert app.state.controller.positions.list_positions() == []

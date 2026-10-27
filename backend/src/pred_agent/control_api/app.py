@@ -728,6 +728,7 @@ def create_app(*, background: bool = False) -> FastAPI:  # noqa: PLR0915
             model=settings.llm_model,
             base_url=settings.llm_base_url,
             tools=tools,
+            mode_provider=lambda: controller.mode,
         )
 
     _chat_llm = _make_chat_llm()  # type: ignore[no-untyped-call]
