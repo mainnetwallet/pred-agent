@@ -69,6 +69,8 @@ For status/position/order queries: call the relevant tool and present the data.
 # Data types
 # ─────────────────────────────────────────────────────────────
 
+_EMPTY_REPLY = "মডেল কোনো উত্তর দেয়নি। আবার চেষ্টা করুন।"
+
 ToolFn = Callable[..., Coroutine[Any, Any, Any]]
 
 
@@ -169,9 +171,13 @@ class ChatLLM:
             finish = choice.get("finish_reason", "stop")
             tool_calls = msg.get("tool_calls")
 
-            if not tool_calls or finish == "stop":
-                # Final reply
-                content = msg.get("content") or ""
+            if not tool_calls:
+                # Final reply. (Do NOT key off finish_reason: several OpenAI-compatible
+                # providers return finish_reason="stop" together with tool_calls.)
+                content = (msg.get("content") or "").strip()
+                if not content:
+                    log.warning("chat llm returned empty reply, finish_reason=%s", finish)
+                    content = _EMPTY_REPLY
                 return ChatResponse(reply=content, cards=cards)
 
             # Execute tool calls
@@ -180,16 +186,23 @@ class ChatLLM:
                 fn_name = tc.get("function", {}).get("name", "")
                 fn_args_raw = tc.get("function", {}).get("arguments", "{}")
                 tc_id = tc.get("id", "call_0")
-                try:
-                    fn_args = json.loads(fn_args_raw)
-                except json.JSONDecodeError:
-                    fn_args = {}
-
-                tool_result, new_cards = await self._run_tool(fn_name, fn_args)
+                fn_args = self._parse_args(fn_args_raw)
+                tool_result: Any
+                new_cards: list[Card]
+                if fn_args is None:
+                    tool_result = {
+                        "error": "invalid_arguments",
+                        "detail": "arguments must be a JSON object; nothing was executed",
+                    }
+                    new_cards = []
+                else:
+                    tool_result, new_cards = await self._run_tool(fn_name, fn_args)
                 cards.extend(new_cards)
 
                 # Wrap tool output in data markers (prompt injection guard)
-                safe_result = f"[DATA]\n{json.dumps(tool_result, ensure_ascii=False)}\n[/DATA]"
+                safe_result = (
+                    f"[DATA]\n{json.dumps(tool_result, ensure_ascii=False, default=str)}\n[/DATA]"
+                )
                 messages.append({
                     "role": "tool",
                     "tool_call_id": tc_id,
@@ -200,6 +213,22 @@ class ChatLLM:
         return ChatResponse(reply="কিছু একটা সমস্যা হয়েছে। আবার চেষ্টা করুন।", cards=cards)
 
     # ── helpers ───────────────────────────────────────────────
+
+    @staticmethod
+    def _parse_args(raw: Any) -> dict[str, Any] | None:
+        """Parse tool-call arguments. Returns None when they are not a JSON object.
+
+        Providers send "" or "null" for tools without parameters; that means {}.
+        """
+        if isinstance(raw, dict):
+            return raw
+        if raw is None or (isinstance(raw, str) and raw.strip() in ("", "null")):
+            return {}
+        try:
+            parsed = json.loads(raw)
+        except (TypeError, json.JSONDecodeError):
+            return None
+        return parsed if isinstance(parsed, dict) else None
 
     def _build_messages(self, history: list[ChatMessage], user_message: str) -> list[dict[str, Any]]:
         msgs: list[dict[str, Any]] = [{"role": "system", "content": SYSTEM_PROMPT}]
@@ -226,13 +255,22 @@ class ChatLLM:
             body["tool_choice"] = "auto"
         return body
 
+    async def _post(self, client: httpx.AsyncClient, body: dict[str, Any]) -> httpx.Response:
+        return await client.post(
+            f"{self.base_url}/chat/completions",
+            headers={"Authorization": f"Bearer {self._api_key}"},
+            json=body,
+        )
+
     async def _call(self, body: dict[str, Any]) -> dict[str, Any]:
-        async with httpx.AsyncClient(transport=self._transport) as client:
-            resp = await client.post(
-                f"{self.base_url}/chat/completions",
-                headers={"Authorization": f"Bearer {self._api_key}"},
-                json=body,
-            )
+        # timeout=None: no timeout limits (project decision). httpx's default is 5s,
+        # which would kill slow models / multi-step tool loops.
+        async with httpx.AsyncClient(timeout=None, transport=self._transport) as client:  # noqa: S113
+            resp = await self._post(client, body)
+            # Some models (o-series, gpt-5, ...) reject a custom temperature: drop and retry.
+            if resp.status_code in (400, 422) and "temperature" in resp.text and "temperature" in body:
+                body.pop("temperature")
+                resp = await self._post(client, body)
             if resp.status_code >= 400:
                 detail = resp.text[:200]
                 log.warning("chat llm http %s: %s", resp.status_code, detail)
@@ -245,6 +283,10 @@ class ChatLLM:
             return {"error": f"unknown tool: {name}"}, []
         try:
             result = await tool.fn(**args)
+        except TypeError as exc:
+            log.warning("tool %s bad arguments: %s", name, exc)
+            return {"error": "invalid_arguments",
+                    "detail": f"{name} received unexpected or missing arguments"}, []
         except Exception as exc:  # noqa: BLE001
             log.warning("tool %s failed: %s", name, type(exc).__name__)
             return {"error": "tool_error"}, []
