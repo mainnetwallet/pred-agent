@@ -16,17 +16,26 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from typing import Any
+from typing import Any, Protocol
 
 from ..auth.clob_auth import ClobAuth
 from ..auth.jwt_auth import JwtAuth
-from ..config import load_settings
+from ..config import Settings, load_settings
 from ..signer.eip712 import (
     private_to_address,
 )
 from ..transport.clob_transport import ClobTransport
 from ..transport.jwt_transport import JwtTransport
+from ..transport.protocol import PredTransport
 from ..util.redaction import redact
+
+
+class _ApprovalTransport(PredTransport, Protocol):
+    """PredTransport plus the Safe-approval calls both JWT and CLOB transports implement."""
+
+    def safe_approval_prepare(self, proxy_creation_signature: str | None = None) -> dict[str, Any]: ...
+
+    def safe_approval_execute(self, signature: str, data: dict[str, Any]) -> dict[str, Any]: ...
 
 
 def _parse_args() -> argparse.Namespace:
@@ -45,10 +54,11 @@ def _parse_args() -> argparse.Namespace:
     return p.parse_args()
 
 
-def _load_transport():
+def _load_transport() -> tuple[Settings, _ApprovalTransport]:
     settings = load_settings()
+    transport: _ApprovalTransport
     if settings.pred_api_key:
-        auth = JwtAuth(
+        jwt_auth = JwtAuth(
             api_key=settings.pred_api_key,
             private_key=settings.private_key or "",
             eoa_address=private_to_address(settings.private_key) if settings.private_key else "0x",
@@ -56,15 +66,15 @@ def _load_transport():
             create_proxy_factory=settings.create_proxy_factory,
             login_message=settings.auth_login_message,
         )
-        transport = JwtTransport(auth)
+        transport = JwtTransport(jwt_auth)
     else:
-        auth = ClobAuth(
+        clob_auth = ClobAuth(
             eoa_address=private_to_address(settings.private_key) if settings.private_key else "0x",
             private_key=settings.private_key or "",
             chain_id=settings.chain_id,
             aggregator_api_key=None,
         )
-        transport = ClobTransport(auth)
+        transport = ClobTransport(clob_auth)
     return settings, transport
 
 

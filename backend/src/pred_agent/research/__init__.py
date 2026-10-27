@@ -8,6 +8,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from typing import Any
 
 
 @dataclass
@@ -24,7 +25,7 @@ class ResearchReport:
     news: list[str] = field(default_factory=list)
     sources: list[str] = field(default_factory=list)  # URLs
     fetched_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
-    raw: dict = field(default_factory=dict)
+    raw: dict[str, Any] = field(default_factory=dict)
 
     def is_fresh(self, max_age_min: int) -> bool:
         age = (datetime.now(timezone.utc) - self.fetched_at).total_seconds() / 60.0

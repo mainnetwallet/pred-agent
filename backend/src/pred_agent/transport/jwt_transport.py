@@ -35,19 +35,19 @@ class JwtTransport(PredTransport):
     # PredTransport protocol
     # ------------------------------------------------------------------ #
 
-    def get(self, path: str, params: dict | None = None) -> dict:
+    def get(self, path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
         _, body, _ = self._request("GET", path, params=params)
         return body
 
-    def post(self, path: str, json: dict | None = None) -> dict:
+    def post(self, path: str, json: dict[str, Any] | None = None) -> dict[str, Any]:
         _, body, _ = self._request("POST", path, json=json)
         return body
 
-    def delete(self, path: str, json: dict | None = None) -> dict:
+    def delete(self, path: str, json: dict[str, Any] | None = None) -> dict[str, Any]:
         _, body, _ = self._request("DELETE", path, json=json)
         return body
 
-    def raw_get(self, path: str, params: dict | None = None) -> tuple[int, str, dict]:
+    def raw_get(self, path: str, params: dict[str, Any] | None = None) -> tuple[int, str, dict[str, Any]]:
         return self._raw_request("GET", path, params=params)
 
     def health_check(self) -> bool:
@@ -62,26 +62,26 @@ class JwtTransport(PredTransport):
     # Read-only helpers (Phase 1)
     # ------------------------------------------------------------------ #
 
-    def account_status(self) -> dict:
+    def account_status(self) -> dict[str, Any]:
         """CLOB-style account status (JWT: portfolio endpoints need auth headers).
         For JWT, we use /api/v1/auth/login response data instead; this is a
         placeholder kept for interface symmetry.
         """
         raise NotImplementedError("JWT account status comes from login response")
 
-    def safe_approval_prepare(self, proxy_creation_signature: str | None = None) -> dict:
+    def safe_approval_prepare(self, proxy_creation_signature: str | None = None) -> dict[str, Any]:
         body: dict[str, Any] = {}
         if proxy_creation_signature:
             body["proxy_creation_signature"] = proxy_creation_signature
         _, result, _ = self._request("POST", "/api/v1/user/safe-approval/prepare", json=body)
         return result
 
-    def safe_approval_execute(self, signature: str, data: dict) -> dict:
+    def safe_approval_execute(self, signature: str, data: dict[str, Any]) -> dict[str, Any]:
         _, result, _ = self._request("POST", "/api/v1/user/safe-approval/execute",
                                      json={"signature": signature, "data": data})
         return result
 
-    def ably_token(self) -> dict:
+    def ably_token(self) -> dict[str, Any]:
         """POST /api/v1/auth/ably — raw Ably TokenDetails."""
         _, result, _ = self._request("POST", "/api/v1/auth/ably")
         return result
@@ -90,8 +90,8 @@ class JwtTransport(PredTransport):
     # Internals
     # ------------------------------------------------------------------ #
 
-    def _request(self, method: str, path: str, params: dict | None = None,
-                 json: dict | None = None) -> tuple[int, dict, dict]:
+    def _request(self, method: str, path: str, params: dict[str, Any] | None = None,
+                 json: dict[str, Any] | None = None) -> tuple[int, dict[str, Any], dict[str, Any]]:
         status, raw_body, headers = self._raw_request(method, path, params=params, json=json)
         if status >= 400:
             raise PredTransportError(status, f"{method} {path} failed", raw_body=raw_body)
@@ -102,8 +102,8 @@ class JwtTransport(PredTransport):
             parsed = {}
         return status, parsed, dict(headers)
 
-    def _raw_request(self, method: str, path: str, params: dict | None = None,
-                     json: dict | None = None) -> tuple[int, str, dict]:
+    def _raw_request(self, method: str, path: str, params: dict[str, Any] | None = None,
+                     json: dict[str, Any] | None = None) -> tuple[int, str, dict[str, Any]]:
         self.auth._ensure_valid()
         assert self.auth._tokens is not None
         proxy = self.auth._tokens.proxy_wallet_addr

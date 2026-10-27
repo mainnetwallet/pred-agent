@@ -55,7 +55,10 @@ def quantity_to_shares(quantity_scaled: int) -> Decimal:
 
 def validate_quantity(shares: Decimal) -> None:
     """Enforce max 3 decimals on quantity."""
-    if shares.as_tuple().exponent < -MAX_QTY_DECIMALS:
+    exponent = shares.as_tuple().exponent
+    if not isinstance(exponent, int):
+        raise ValueError("quantity must be a finite number")
+    if exponent < -MAX_QTY_DECIMALS:
         raise ValueError(f"quantity exceeds {MAX_QTY_DECIMALS} decimal places")
 
 

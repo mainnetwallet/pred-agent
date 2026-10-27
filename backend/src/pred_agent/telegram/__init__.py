@@ -7,13 +7,17 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from decimal import Decimal
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from pred_agent.proposals import Proposal
 
 
 @dataclass
 class TelegramMessage:
     chat_id: int
     text: str
-    reply_markup: dict | None = None
+    reply_markup: dict[str, Any] | None = None
 
 
 class TelegramGate:
@@ -25,7 +29,7 @@ class TelegramGate:
     def is_allowed(self, user_id: int) -> bool:
         return self.allowed_user_id is not None and user_id == self.allowed_user_id
 
-    def proposal_card(self, *, prop, ttl_seconds: int) -> str:
+    def proposal_card(self, *, prop: Proposal, ttl_seconds: int) -> str:
         """Build a proposal card message from structured fields."""
         mode_tag = "PAPER" if prop.mode == "PAPER" else "LIVE"
         adv_tag = " [ADVISORY]" if prop.advisory else ""

@@ -23,11 +23,11 @@ COPY backend/pyproject.toml backend/pytest.ini backend/alembic.ini ./backend/
 COPY backend/alembic ./backend/alembic/
 RUN pip install --upgrade pip setuptools wheel && \
     pip install --no-deps -e /build/backend 2>/dev/null || pip install -r /dev/null 2>/dev/null; \
-    pip install "fastapi==0.115.0" "uvicorn[standard]==0.34.0" "httpx==0.27.2" \
+    pip install "fastapi==0.162.0" "uvicorn[standard]==0.34.0" "httpx==0.27.2" \
         "pydantic==2.10.3" "pydantic-settings==2.6.1" "SQLAlchemy==2.0.36" "alembic==1.13.1" \
         "eth-account==0.13.2" "web3==7.10.0" "ably==3.1.4" "python-telegram-bot==21.4" \
         "structlog==24.4.0" "pyyaml==6.0.2" "python-dateutil==2.9.0.post0" \
-        "pytest==8.3.3" "pytest-asyncio==0.26.0" "ruff==0.9.6" "mypy==1.13.0" "pip-audit==2.7.2"
+        "pytest==9.0.3" "pytest-asyncio==1.4.1" "types-PyYAML==6.0.12.20260906" "ruff==0.9.6" "mypy==1.13.0" "pip-audit==2.7.2"
 
 # ---------------------------------------------------------------------------
 # Runtime stage — slim, non-root user

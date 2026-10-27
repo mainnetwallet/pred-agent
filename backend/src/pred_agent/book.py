@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from decimal import Decimal
+from typing import Any
 
 
 @dataclass(frozen=True)
@@ -117,7 +118,7 @@ class BookAnalyzer:
         return snapshot.spread_cents <= self.max_spread_cents
 
 
-def normalize_book(raw: dict, market_id: str, *, ws_dollars: bool = False) -> BookSnapshot:
+def normalize_book(raw: dict[str, Any], market_id: str, *, ws_dollars: bool = False) -> BookSnapshot:
     """Normalize a raw orderbook response (REST cents or WS dollars) into cents.
 
     ws_dollars=True indicates the source is the Ably WS (prices like "0.62" = 62¢).
@@ -126,7 +127,7 @@ def normalize_book(raw: dict, market_id: str, *, ws_dollars: bool = False) -> Bo
     bids_raw = raw.get("bids", [])
     asks_raw = raw.get("asks", [])
 
-    def to_cents(price_str) -> Decimal:
+    def to_cents(price_str: Any) -> Decimal:
         p = Decimal(str(price_str))
         if ws_dollars:
             return p * Decimal(100)  # 0.62 -> 62 cents

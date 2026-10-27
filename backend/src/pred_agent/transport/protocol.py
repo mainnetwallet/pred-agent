@@ -9,7 +9,7 @@ The rest of the code never branches on auth mode except for capability flags
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 
 
 @dataclass(frozen=True)
@@ -37,16 +37,16 @@ class PredTransport(Protocol):
 
     caps: TransportCaps
 
-    def get(self, path: str, params: dict | None = None) -> dict:
+    def get(self, path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
         """GET request; returns parsed JSON body (data or top-level)."""
 
-    def post(self, path: str, json: dict | None = None) -> dict:
+    def post(self, path: str, json: dict[str, Any] | None = None) -> dict[str, Any]:
         """POST request; returns parsed JSON body."""
 
-    def delete(self, path: str, json: dict | None = None) -> dict:
+    def delete(self, path: str, json: dict[str, Any] | None = None) -> dict[str, Any]:
         """DELETE request; returns parsed JSON body."""
 
-    def raw_get(self, path: str, params: dict | None = None) -> tuple[int, str, dict]:
+    def raw_get(self, path: str, params: dict[str, Any] | None = None) -> tuple[int, str, dict[str, Any]]:
         """Returns (status, raw_body, headers) for audit logging."""
 
     def health_check(self) -> bool:

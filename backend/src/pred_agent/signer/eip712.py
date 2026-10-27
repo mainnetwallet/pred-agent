@@ -11,8 +11,11 @@ Only this module reads ``PRIVATE_KEY``.
 
 from __future__ import annotations
 
+from typing import Any
+
 from eth_account import Account
-from eth_utils import keccak, to_bytes
+from eth_utils.conversions import to_bytes
+from eth_utils.crypto import keccak
 from hexbytes import HexBytes
 
 # secp256k1 curve order / half (for low-s canonicalization)
@@ -117,7 +120,7 @@ SAFE_TX_TYPES = {
 # EIP-712 helpers
 # ---------------------------------------------------------------------------
 
-def _encode_type(primary_type: str, types: dict) -> str:
+def _encode_type(primary_type: str, types: dict[str, Any]) -> str:
     """Encode an EIP-712 type string with dependencies sorted alphabetically."""
     deps: list[str] = []
     seen = {primary_type}
@@ -141,11 +144,11 @@ def _encode_type(primary_type: str, types: dict) -> str:
     return "".join(parts)
 
 
-def _type_hash(primary_type: str, types: dict) -> bytes:
+def _type_hash(primary_type: str, types: dict[str, Any]) -> bytes:
     return keccak(text=_encode_type(primary_type, types))
 
 
-def _encode_value(mtype: str, value, types: dict) -> bytes:
+def _encode_value(mtype: str, value: Any, types: dict[str, Any]) -> bytes:
     """EIP-712 encoding of a single value (returns 32 bytes)."""
     if mtype == "string":
         return keccak(text=value)
@@ -164,7 +167,7 @@ def _encode_value(mtype: str, value, types: dict) -> bytes:
     return to_bytes(hexstr=value)
 
 
-def _hash_struct(primary_type: str, types: dict, message: dict) -> bytes:
+def _hash_struct(primary_type: str, types: dict[str, Any], message: dict[str, Any]) -> bytes:
     """hashStruct = keccak(encodeType(primaryType) ++ encodeValues)."""
     encoded = _type_hash(primary_type, types)
     for member in types[primary_type]:
@@ -172,7 +175,7 @@ def _hash_struct(primary_type: str, types: dict, message: dict) -> bytes:
     return keccak(encoded)
 
 
-def _hash_domain(domain: dict, types: dict) -> bytes:
+def _hash_domain(domain: dict[str, Any], types: dict[str, Any]) -> bytes:
     """EIP-712 domain separator."""
     domain_type = types["EIP712Domain"]
     encoded = _type_hash("EIP712Domain", types)
@@ -181,31 +184,29 @@ def _hash_domain(domain: dict, types: dict) -> bytes:
     return keccak(encoded)
 
 
-def _eip712_digest(domain: dict, types: dict, primary_type: str, message: dict) -> bytes:
+def _eip712_digest(domain: dict[str, Any], types: dict[str, Any], primary_type: str, message: dict[str, Any]) -> bytes:
     """Raw EIP-712 digest = keccak(domain_separator || struct_hash)."""
     domain_separator = _hash_domain(domain, types)
     struct_hash = _hash_struct(primary_type, types, message)
     return keccak(domain_separator + struct_hash)
 
 
-def _eip712_digest_with_prefix(domain: dict, types: dict, primary_type: str, message: dict) -> bytes:
+def _eip712_digest_with_prefix(domain: dict[str, Any], types: dict[str, Any], primary_type: str, message: dict[str, Any]) -> bytes:
     """Standard Ethereum signed-message hash = keccak(\\x19\\x01 || raw_digest)."""
     return keccak(b"\x19\x01" + _eip712_digest(domain, types, primary_type, message))
 
 
-def _canonical_sig(r, s, v: int) -> str:
+def _canonical_sig(r: int | bytes, s: int | bytes, v: int) -> str:
     """Return 0x<r><v> with canonical low-s and v in {27,28}."""
-    if isinstance(r, int):
-        r = int.to_bytes(r, 32, "big")
-    if isinstance(s, int):
-        s = int.to_bytes(s, 32, "big")
-    s_int = int.from_bytes(s, "big")
+    r_bytes = r.to_bytes(32, "big") if isinstance(r, int) else r
+    s_in = s.to_bytes(32, "big") if isinstance(s, int) else s
+    s_int = int.from_bytes(s_in, "big")
     v_int = int(v)
     if s_int > CURVE_HALF:
         s_int = CURVE_ORDER - s_int
         v_int = 27 if v_int == 28 else 28
     s_bytes = s_int.to_bytes(32, "big")
-    return "0x" + r.hex() + s_bytes.hex() + format(v_int, "02x")
+    return "0x" + r_bytes.hex() + s_bytes.hex() + format(v_int, "02x")
 
 
 def _sign_digest(digest: bytes, private_key: str) -> str:
@@ -214,7 +215,7 @@ def _sign_digest(digest: bytes, private_key: str) -> str:
     return _canonical_sig(signed.r, signed.s, signed.v)
 
 
-def _sign_typed(domain: dict, types: dict, primary_type: str, message: dict,
+def _sign_typed(domain: dict[str, Any], types: dict[str, Any], primary_type: str, message: dict[str, Any],
                 private_key: str) -> str:
     """Sign standard EIP-712 typed data (with \\x19\\x01 prefix)."""
     digest = _eip712_digest_with_prefix(domain, types, primary_type, message)
@@ -302,7 +303,7 @@ def sign_safe_tx_digest(digest: bytes, private_key: str) -> str:
     return _sign_digest(digest, private_key)
 
 
-def safe_tx_digest(chain_id: int, safe_address: str, safe_tx_data: dict) -> bytes:
+def safe_tx_digest(chain_id: int, safe_address: str, safe_tx_data: dict[str, Any]) -> bytes:
     """Compute the raw SafeTx EIP-712 digest (no prefix) for verification/signing.
 
     Domain: EIP712Domain(uint256 chainId,address verifyingContract=safeAddress)
@@ -313,7 +314,7 @@ def safe_tx_digest(chain_id: int, safe_address: str, safe_tx_data: dict) -> byte
     return _eip712_digest(domain, SAFE_TX_TYPES, SAFE_TX_TYPE, safe_tx_data)
 
 
-def sign_safe_tx(chain_id: int, safe_address: str, safe_tx_data: dict,
+def sign_safe_tx(chain_id: int, safe_address: str, safe_tx_data: dict[str, Any],
                  private_key: str) -> str:
     """Sign a SafeTx (raw digest, no EIP-191 prefix), canonical low-s."""
     digest = safe_tx_digest(chain_id, safe_address, safe_tx_data)
@@ -338,4 +339,5 @@ def signature_v(signature: str) -> int:
 
 
 def private_to_address(private_key: str) -> str:
-    return Account.from_key(private_key).address
+    address: str = Account.from_key(private_key).address
+    return address

@@ -140,7 +140,8 @@ class Settings(BaseSettings):
 
 def load_settings(env_file: str | None = None) -> Settings:
     """Load and freeze settings. Call once at startup."""
-    settings = Settings(env_file=env_file) if env_file else Settings()
+    # `_env_file` is a real BaseSettings init kwarg; mypy can't see it through dataclass_transform.
+    settings = Settings(_env_file=env_file) if env_file else Settings()  # type: ignore[call-arg]
     return settings.freeze()
 
 

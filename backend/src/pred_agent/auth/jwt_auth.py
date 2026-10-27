@@ -185,7 +185,7 @@ class JwtAuth:
 
     def _extract_refresh_cookie(self, resp: httpx.Response) -> str:
         """Extract refresh_token from Set-Cookie header."""
-        cookie = resp.headers.get("Set-Cookie", "")
+        cookie: str = resp.headers.get("Set-Cookie", "")
         for raw_part in cookie.split(";"):
             part = raw_part.strip()
             if part.startswith("refresh_token="):

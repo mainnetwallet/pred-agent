@@ -32,8 +32,8 @@ _WEB_INDEX = Path(__file__).parent / "web" / "index.html"
 # Response envelope
 # ---------------------------------------------------------------------------
 
-def envelope(*, ok: bool, data: Any = None, error: dict | None = None,
-             audit_id: str | None = None) -> dict:
+def envelope(*, ok: bool, data: Any = None, error: dict[str, Any] | None = None,
+             audit_id: str | None = None) -> dict[str, Any]:
     body: dict[str, Any] = {"ok": ok}
     if data is not None:
         body["data"] = data
@@ -76,7 +76,7 @@ def create_app() -> FastAPI:
     app.state.controller = controller
 
     @asynccontextmanager
-    async def lifespan(app: FastAPI):
+    async def lifespan(app: FastAPI) -> Any:
         # Telegram bot runs in this same process/event loop (polling, no webhook).
         from pred_agent.telegram.bot import start_bot, stop_bot
 
@@ -94,11 +94,11 @@ def create_app() -> FastAPI:
     # ------------------------------------------------------------------ #
 
     @app.get("/health")
-    async def health():
+    async def health() -> Any:
         return {"ok": True, "status": "healthy"}
 
     @app.get("/ready")
-    async def ready():
+    async def ready() -> Any:
         # Feeds ok, DB ok, auth ok
         return {"ok": True, "ready": True}
 
@@ -107,7 +107,7 @@ def create_app() -> FastAPI:
     # ------------------------------------------------------------------ #
 
     @app.post("/v1/pair")
-    async def pair(body: dict):
+    async def pair(body: dict[str, Any]) -> Any:
         code = body.get("code")
         device_name = body.get("device_name", "unknown")
         device_public_key = body.get("device_public_key", "")
@@ -119,14 +119,14 @@ def create_app() -> FastAPI:
         return envelope(ok=True, data={"device_token": token})
 
     @app.get("/v1/devices")
-    async def list_devices(authorization: str | None = Header(None)):
+    async def list_devices(authorization: str | None = Header(None)) -> Any:
         device_id = _verify_auth(authorization)
         if device_id is None:
             return error_response("unauthorized", "invalid or missing device token", 401)
         return envelope(ok=True, data={"devices": auth.list_devices()})
 
     @app.delete("/v1/devices/{device_id}")
-    async def revoke_device(device_id: str, authorization: str | None = Header(None)):
+    async def revoke_device(device_id: str, authorization: str | None = Header(None)) -> Any:
         caller = _verify_auth(authorization)
         if caller is None:
             return error_response("unauthorized", "invalid or missing device token", 401)
@@ -167,11 +167,11 @@ def create_app() -> FastAPI:
     # ------------------------------------------------------------------ #
 
     @app.get("/", response_class=HTMLResponse)
-    async def index():
+    async def index() -> Any:
         return HTMLResponse(_WEB_INDEX.read_text(encoding="utf-8"))
 
     @app.post("/v1/login")
-    async def login(body: dict, request: Request):
+    async def login(body: dict[str, Any], request: Request) -> Any:
         if not login_mgr.enabled:
             return error_response("login_disabled", "ADMIN_PASSWORD is not set on the server", 503)
         client = _client_key(request)
@@ -184,7 +184,7 @@ def create_app() -> FastAPI:
         return envelope(ok=True, data={"token": token, "expires_in": settings.session_ttl_hours * 3600})
 
     @app.get("/v1/me")
-    async def me(authorization: str | None = Header(None)):
+    async def me(authorization: str | None = Header(None)) -> Any:
         who = _verify_auth(authorization)
         if who is None:
             return _unauth()
@@ -195,41 +195,41 @@ def create_app() -> FastAPI:
     # ------------------------------------------------------------------ #
 
     @app.get("/v1/status")
-    async def status(authorization: str | None = Header(None)):
+    async def status(authorization: str | None = Header(None)) -> Any:
         if _verify_auth(authorization) is None:
             return _unauth()
         return envelope(ok=True, data=controller.status())
 
     @app.post("/v1/pause")
-    async def pause(authorization: str | None = Header(None)):
+    async def pause(authorization: str | None = Header(None)) -> Any:
         if _verify_auth(authorization) is None:
             return _unauth()
         controller.pause()
         return envelope(ok=True, data=controller.status())
 
     @app.post("/v1/resume")
-    async def resume(authorization: str | None = Header(None)):
+    async def resume(authorization: str | None = Header(None)) -> Any:
         if _verify_auth(authorization) is None:
             return _unauth()
         controller.resume()
         return envelope(ok=True, data=controller.status())
 
     @app.post("/v1/panic")
-    async def panic(authorization: str | None = Header(None)):
+    async def panic(authorization: str | None = Header(None)) -> Any:
         if _verify_auth(authorization) is None:
             return _unauth()
         result = controller.panic()
         return envelope(ok=True, data={**controller.status(), **result})
 
     @app.get("/v1/proposals")
-    async def proposals(status: str | None = None, authorization: str | None = Header(None)):
+    async def proposals(status: str | None = None, authorization: str | None = Header(None)) -> Any:
         if _verify_auth(authorization) is None:
             return _unauth()
         return envelope(ok=True, data=to_jsonable(controller.list_proposals(status)))
 
     @app.post("/v1/proposals/{proposal_id}/approve")
-    async def approve(proposal_id: str, body: dict | None = None,
-                      authorization: str | None = Header(None)):
+    async def approve(proposal_id: str, body: dict[str, Any] | None = None,
+                      authorization: str | None = Header(None)) -> Any:
         if _verify_auth(authorization) is None:
             return _unauth()
         amount: Decimal | None = None
@@ -249,7 +249,7 @@ def create_app() -> FastAPI:
         return envelope(ok=True, data=to_jsonable(prop))
 
     @app.post("/v1/proposals/{proposal_id}/reject")
-    async def reject(proposal_id: str, authorization: str | None = Header(None)):
+    async def reject(proposal_id: str, authorization: str | None = Header(None)) -> Any:
         if _verify_auth(authorization) is None:
             return _unauth()
         prop = controller.reject(proposal_id, via="app")
@@ -258,25 +258,25 @@ def create_app() -> FastAPI:
         return envelope(ok=True, data=to_jsonable(prop))
 
     @app.get("/v1/orders")
-    async def orders(authorization: str | None = Header(None)):
+    async def orders(authorization: str | None = Header(None)) -> Any:
         if _verify_auth(authorization) is None:
             return _unauth()
         return envelope(ok=True, data=controller.orders())
 
     @app.get("/v1/positions")
-    async def positions(authorization: str | None = Header(None)):
+    async def positions(authorization: str | None = Header(None)) -> Any:
         if _verify_auth(authorization) is None:
             return _unauth()
         return envelope(ok=True, data=controller.positions_list())
 
     @app.get("/v1/limits")
-    async def get_limits(authorization: str | None = Header(None)):
+    async def get_limits(authorization: str | None = Header(None)) -> Any:
         if _verify_auth(authorization) is None:
             return _unauth()
         return envelope(ok=True, data=controller.limits_list())
 
     @app.put("/v1/limits")
-    async def put_limits(body: dict, authorization: str | None = Header(None)):
+    async def put_limits(body: dict[str, Any], authorization: str | None = Header(None)) -> Any:
         if _verify_auth(authorization) is None:
             return _unauth()
         err = controller.set_limits(body)
@@ -285,7 +285,7 @@ def create_app() -> FastAPI:
         return envelope(ok=True, data=controller.limits_list())
 
     @app.get("/v1/llm")
-    async def llm_info(authorization: str | None = Header(None)):
+    async def llm_info(authorization: str | None = Header(None)) -> Any:
         if _verify_auth(authorization) is None:
             return _unauth()
         llm = build_llm_client(settings)
@@ -297,7 +297,7 @@ def create_app() -> FastAPI:
         })
 
     @app.post("/v1/llm/test")
-    async def llm_test(authorization: str | None = Header(None)):
+    async def llm_test(authorization: str | None = Header(None)) -> Any:
         if _verify_auth(authorization) is None:
             return _unauth()
         llm = build_llm_client(settings)
@@ -314,7 +314,7 @@ def create_app() -> FastAPI:
         return envelope(ok=True, data={"model": llm.model, "reply": res.parsed})
 
     @app.get("/v1/fixtures")
-    async def fixtures(authorization: str | None = Header(None)):
+    async def fixtures(authorization: str | None = Header(None)) -> Any:
         if _verify_auth(authorization) is None:
             return _unauth()
         return envelope(ok=True, data=[])  # scanner not wired into this process yet
@@ -324,7 +324,7 @@ def create_app() -> FastAPI:
     # ------------------------------------------------------------------ #
 
     @app.websocket("/v1/ws")
-    async def ws(websocket: WebSocket):
+    async def ws(websocket: WebSocket) -> Any:
         await websocket.accept()
         device_id = None
         try:

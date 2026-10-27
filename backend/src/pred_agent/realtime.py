@@ -10,6 +10,7 @@ import logging
 import time
 from dataclasses import dataclass
 from decimal import Decimal
+from typing import Any
 
 import httpx
 
@@ -90,16 +91,17 @@ class BookFeed:
         except Exception:
             return None
 
-    async def _http_get_no_auth(self, path: str) -> dict | None:
+    async def _http_get_no_auth(self, path: str) -> dict[str, Any] | None:
 
         settings = load_settings()
         async with httpx.AsyncClient(timeout=10.0) as client:
             resp = await client.get(f"{settings.host}{path}")
             if resp.status_code >= 400:
                 return None
-            return resp.json()
+            data: dict[str, Any] = resp.json()
+            return data
 
-    def _normalize_and_cache(self, market_id: str, raw: dict,
+    def _normalize_and_cache(self, market_id: str, raw: dict[str, Any],
                              ws_dollars: bool) -> BookSnapshot:
         snapshot = normalize_book(raw, market_id, ws_dollars=ws_dollars)
         # Sequence guard
@@ -118,7 +120,7 @@ class BookFeed:
     # Ably feed (JWT mode only)
     # ------------------------------------------------------------------ #
 
-    async def start_ably_feed(self, ably_token_details: dict,
+    async def start_ably_feed(self, ably_token_details: dict[str, Any],
                               type_reference_ids: list[str]) -> None:
         """Connect to Ably and subscribe to market:{type_reference_id} channels."""
         # Ably SDK is sync; run in executor to avoid blocking the event loop
@@ -127,23 +129,24 @@ class BookFeed:
             None, self._ably_run, ably_token_details, type_reference_ids
         )
 
-    def _ably_run(self, token_details: dict, type_reference_ids: list[str]) -> None:
+    def _ably_run(self, token_details: dict[str, Any], type_reference_ids: list[str]) -> None:
         """Blocking Ably connection (runs in executor)."""
         from ably import AblyRealtime
 
         ably = AblyRealtime(token_details=token_details)
         connection = ably.connection
 
-        @connection.on("connected")
-        def on_connected(_):
+        def on_connected(_: Any) -> None:
             for trid in type_reference_ids:
                 channel_name = f"market:{trid}"
                 channel = ably.channels.get(channel_name)
                 channel.subscribe(self._on_orderbook_message)
 
-        @connection.on("failed")
-        def on_failed(_):
+        def on_failed(_: Any) -> None:
             pass
+
+        connection.on("connected", on_connected)
+        connection.on("failed", on_failed)
 
         ably.connect()
         # Block until disconnected
@@ -151,7 +154,7 @@ class BookFeed:
             time.sleep(1)
         ably.close()
 
-    def _on_orderbook_message(self, message) -> None:
+    def _on_orderbook_message(self, message: Any) -> None:
         """Handle an Ably orderbook snapshot message."""
         try:
             data = message.data if hasattr(message, "data") else message

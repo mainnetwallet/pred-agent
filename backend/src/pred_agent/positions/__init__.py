@@ -71,8 +71,8 @@ class PositionManager:
 
     def daily_pnl(self) -> Decimal:
         today = datetime.now(timezone.utc).date()
-        return sum(e.amount_usd for e in self._pnl_ledger
-                   if e.ts.date() == today)
+        return sum((e.amount_usd for e in self._pnl_ledger
+                    if e.ts.date() == today), Decimal(0))
 
     def total_pnl(self) -> Decimal:
-        return sum(e.amount_usd for e in self._pnl_ledger)
+        return sum((e.amount_usd for e in self._pnl_ledger), Decimal(0))

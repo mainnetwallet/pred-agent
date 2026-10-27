@@ -54,7 +54,8 @@ class ProbabilityEngine:
         p_home = self.clamp01(pred_mid_cents / Decimal(100))
         p_away = self.clamp01(Decimal(1) - p_home)
         p_draw = Decimal("0.05")
-        return dict(self.normalize3(p_home, p_draw, p_away))
+        home, draw, away = self.normalize3(p_home, p_draw, p_away)
+        return {"home": home, "draw": draw, "away": away}
 
     def apply_llm_adjustment(self, baseline: dict[str, Decimal],
                              adjustment_pp: Decimal) -> dict[str, Decimal]:

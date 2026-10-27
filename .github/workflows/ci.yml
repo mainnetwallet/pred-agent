@@ -37,6 +37,7 @@ jobs:
 
       - name: Install dependencies
         run: |
+          python -m pip install --upgrade pip setuptools wheel  # runner's bundled pip/setuptools have known CVEs (pip-audit)
           cd backend
           pip install -e ".[dev]"
 

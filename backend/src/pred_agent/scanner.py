@@ -6,8 +6,11 @@ Grounded in kit/02_PRED_API_SPEC.md section 6 (Market Discovery) and live docs.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
+from typing import Any
 
 import httpx
+from sqlalchemy.orm import Session
 
 from pred_agent.config import load_settings
 from pred_agent.store.models import Fixture, Market
@@ -24,9 +27,9 @@ class DiscoveredParent:
     title: str | None
     status: str | None
     fee_rate_bps: int | None
-    fixture: dict | None
-    team_data: list[dict]
-    markets: list[dict]
+    fixture: dict[str, Any] | None
+    team_data: list[dict[str, Any]]
+    markets: list[dict[str, Any]]
 
 
 class Scanner:
@@ -107,7 +110,7 @@ class Scanner:
                 break
         return results
 
-    def upsert_to_db(self, session, results: list[DiscoveredParent]) -> int:
+    def upsert_to_db(self, session: Session, results: list[DiscoveredParent]) -> int:
         """Upsert discovered fixtures and markets into the DB. Returns count upserted."""
         count = 0
         for parent in results:
@@ -150,7 +153,7 @@ class Scanner:
                 mid = child.get("market_id", "")
                 existing_m = session.query(Market).filter_by(market_id=mid).first()
                 if existing_m:
-                    existing_m.status = child.get("status")
+                    existing_m.status = child.get("status") or existing_m.status  # column is NOT NULL
                     existing_m.tick_size = child.get("tick_size")
                     existing_m.ltp = child.get("ltp")
                     existing_m.mid_price = child.get("mid_price")
@@ -178,7 +181,7 @@ class Scanner:
     # Internals
     # ------------------------------------------------------------------ #
 
-    def _fetch_page(self, offset: int) -> dict:
+    def _fetch_page(self, offset: int) -> dict[str, Any]:
         """Fetch one discovery page with rate limiting."""
         max_retries = 5
         for _attempt in range(max_retries):
@@ -199,7 +202,8 @@ class Scanner:
                 _time.sleep(min(wait, 60.0))  # cap wait at 60s
                 continue
             resp.raise_for_status()
-            return resp.json()
+            page: dict[str, Any] = resp.json()
+            return page
         raise RuntimeError(f"Failed to fetch discovery page after {max_retries} retries (429 rate limited)")
 
     def _enforce_rate_limit(self) -> None:
@@ -214,7 +218,5 @@ class Scanner:
         self._last_request_time = _time.time()
 
 
-def _parse_rfc3339(value: str):
-    from datetime import datetime
-
+def _parse_rfc3339(value: str) -> datetime:
     return datetime.fromisoformat(value.replace("Z", "+00:00"))

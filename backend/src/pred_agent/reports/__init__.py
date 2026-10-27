@@ -9,6 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from decimal import Decimal
+from typing import Any
 
 
 @dataclass
@@ -44,7 +45,7 @@ class Reports:
         self._proposals_rejected = 0
         self._proposals_expired = 0
         self._fills = 0
-        self._calibration_rows: list[dict] = []
+        self._calibration_rows: list[dict[str, Any]] = []
 
     def record_proposal_created(self) -> None:
         self._proposals_created += 1
@@ -81,13 +82,13 @@ class Reports:
     def brier_score(self) -> Decimal | None:
         if not self._calibration_rows:
             return None
-        total = sum((r["p_fair"] - (Decimal(1) if r["won"] else Decimal(0))) ** 2
-                    for r in self._calibration_rows)
+        total = Decimal(sum((r["p_fair"] - (Decimal(1) if r["won"] else Decimal(0))) ** 2
+                            for r in self._calibration_rows))
         return total / Decimal(len(self._calibration_rows))
 
     def calibration_table(self) -> list[CalibrationBucket]:
         """Bucket predictions and compute predicted vs actual win rate."""
-        buckets: dict[str, list[dict]] = {}
+        buckets: dict[str, list[dict[str, Any]]] = {}
         for r in self._calibration_rows:
             p = r["p_fair"]
             bucket = f"{int(p * 10 // 10) * 10}-{int(p * 10 // 10) * 10 + 10}%"
@@ -98,6 +99,6 @@ class Reports:
             win_rate = sum(Decimal(1) if r["won"] else Decimal(0) for r in rows) / Decimal(len(rows))
             result.append(CalibrationBucket(
                 edge_bucket=bucket, predicted_p=avg_p, actual_win_rate=win_rate,
-                n=Decimal(len(rows)), brier_score=Decimal("0"),
+                n=len(rows), brier_score=Decimal("0"),
             ))
         return result

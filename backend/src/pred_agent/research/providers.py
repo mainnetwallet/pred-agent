@@ -1,5 +1,5 @@
-"""research package."""
+"""Re-exports of the research provider types (defined in the package __init__)."""
 
-from .providers import LLMSearchResearchProvider, ResearchProvider, ResearchReport
+from . import LLMSearchResearchProvider, ResearchProvider, ResearchReport
 
-__all__ = ["ResearchReport", "ResearchProvider", "LLMSearchResearchProvider"]
+__all__ = ["LLMSearchResearchProvider", "ResearchProvider", "ResearchReport"]

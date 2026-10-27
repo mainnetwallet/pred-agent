@@ -24,6 +24,8 @@ from pred_agent.config import Settings
 from pred_agent.control_api.controller import AgentController
 from pred_agent.telegram import TelegramGate
 
+BotApp = Application[Any, Any, Any, Any, Any, Any]
+
 log = logging.getLogger(__name__)
 
 HELP = (
@@ -53,7 +55,7 @@ def _status_text(c: AgentController) -> str:
     )
 
 
-def build_application(settings: Settings, controller: AgentController) -> Application | None:
+def build_application(settings: Settings, controller: AgentController) -> BotApp | None:
     token = settings.telegram_bot_token
     allowed = settings.telegram_allowed_user_id
     if not token or not allowed:
@@ -147,7 +149,7 @@ def build_application(settings: Settings, controller: AgentController) -> Applic
         q = update.callback_query
         if q is None or q.from_user is None or not gate.is_allowed(q.from_user.id):
             return
-        action, _, arg = (q.data or "").partition(":")
+        action, _sep, arg = (q.data or "").partition(":")
         if action == "panic":
             if arg == "yes":
                 r = controller.panic()
@@ -174,7 +176,7 @@ def build_application(settings: Settings, controller: AgentController) -> Applic
     return app
 
 
-async def start_bot(settings: Settings, controller: AgentController) -> Application | None:
+async def start_bot(settings: Settings, controller: AgentController) -> BotApp | None:
     """Start polling. Never raises: a bad token must not take the web service down."""
     try:
         app = build_application(settings, controller)
@@ -195,7 +197,7 @@ async def start_bot(settings: Settings, controller: AgentController) -> Applicat
         return None
 
 
-async def stop_bot(app: Application | None) -> None:
+async def stop_bot(app: BotApp | None) -> None:
     if app is None:
         return
     try:

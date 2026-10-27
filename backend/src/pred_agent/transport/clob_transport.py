@@ -34,19 +34,19 @@ class ClobTransport(PredTransport):
     # PredTransport protocol
     # ------------------------------------------------------------------ #
 
-    def get(self, path: str, params: dict | None = None) -> dict:
+    def get(self, path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
         status, body, _ = self._request("GET", path, params=params)
         return body
 
-    def post(self, path: str, json: dict | None = None) -> dict:
+    def post(self, path: str, json: dict[str, Any] | None = None) -> dict[str, Any]:
         status, body, _ = self._request("POST", path, json=json)
         return body
 
-    def delete(self, path: str, json: dict | None = None) -> dict:
+    def delete(self, path: str, json: dict[str, Any] | None = None) -> dict[str, Any]:
         status, body, _ = self._request("DELETE", path, json=json)
         return body
 
-    def raw_get(self, path: str, params: dict | None = None) -> tuple[int, str, dict]:
+    def raw_get(self, path: str, params: dict[str, Any] | None = None) -> tuple[int, str, dict[str, Any]]:
         return self._raw_request("GET", path, params=params)
 
     def health_check(self) -> bool:
@@ -66,33 +66,34 @@ class ClobTransport(PredTransport):
         import json as _json
         return int(_json.loads(body))
 
-    def account_status(self) -> dict:
+    def account_status(self) -> dict[str, Any]:
         """GET /clob/api/v1/user/account-status — top-level fields, no data wrapper."""
         _, body, _ = self._raw_request("GET", "/clob/api/v1/user/account-status")
         import json as _json
-        return _json.loads(body)
+        status: dict[str, Any] = _json.loads(body)
+        return status
 
     def activate_user(self, activate_user: bool = True,
-                      referral_code: str | None = None) -> dict:
+                      referral_code: str | None = None) -> dict[str, Any]:
         body: dict[str, Any] = {"activate_user": activate_user}
         if referral_code:
             body["referral_code"] = referral_code
         _, result, _ = self._request("POST", "/clob/api/v1/user/activate-user", json=body)
         return result
 
-    def create_proxy_wallet(self, signature: str) -> dict:
+    def create_proxy_wallet(self, signature: str) -> dict[str, Any]:
         _, result, _ = self._request("POST", "/clob/api/v1/user/create-proxy-wallet",
                                      json={"signature": signature})
         return result
 
-    def safe_approval_prepare(self, proxy_creation_signature: str | None = None) -> dict:
+    def safe_approval_prepare(self, proxy_creation_signature: str | None = None) -> dict[str, Any]:
         body: dict[str, Any] = {}
         if proxy_creation_signature:
             body["proxy_creation_signature"] = proxy_creation_signature
         _, result, _ = self._request("POST", "/clob/api/v1/user/safe-approval/prepare", json=body)
         return result
 
-    def safe_approval_execute(self, signature: str, data: dict) -> dict:
+    def safe_approval_execute(self, signature: str, data: dict[str, Any]) -> dict[str, Any]:
         _, result, _ = self._request("POST", "/clob/api/v1/user/safe-approval/execute",
                                      json={"signature": signature, "data": data})
         return result
@@ -101,8 +102,8 @@ class ClobTransport(PredTransport):
     # Internals
     # ------------------------------------------------------------------ #
 
-    def _request(self, method: str, path: str, params: dict | None = None,
-                 json: dict | None = None) -> tuple[int, dict, dict]:
+    def _request(self, method: str, path: str, params: dict[str, Any] | None = None,
+                 json: dict[str, Any] | None = None) -> tuple[int, dict[str, Any], dict[str, Any]]:
         status, raw_body, headers = self._raw_request(method, path, params=params, json=json)
         if status >= 400:
             raise PredTransportError(status, f"{method} {path} failed", raw_body=raw_body)
@@ -113,8 +114,8 @@ class ClobTransport(PredTransport):
             parsed = {}
         return status, parsed, dict(headers)
 
-    def _raw_request(self, method: str, path: str, params: dict | None = None,
-                     json: dict | None = None) -> tuple[int, str, dict]:
+    def _raw_request(self, method: str, path: str, params: dict[str, Any] | None = None,
+                     json: dict[str, Any] | None = None) -> tuple[int, str, dict[str, Any]]:
         # canonicalPath excludes /clob and query string
         canonical_path = path
         if canonical_path.startswith("/clob"):
