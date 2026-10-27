@@ -565,6 +565,8 @@ function renderCard(card) {
   }
   return null;
 }
+
+async function sendChatMessage(text) {
   if (!text.trim()) return;
   appendChatMsg("user", text);
   $("chat-input").value = "";
