@@ -97,9 +97,9 @@ class BookAnalyzer:
         best_price = levels[0].price_cents if levels else avg_price
         # Slippage in percentage points: how far from best price we had to go
         if side == "buy":
-            slippage_pp = (avg_price - best_price)  # higher price = worse for buyer
+            slippage_pp = (avg_price - best_price) / best_price * Decimal(100)
         else:
-            slippage_pp = (best_price - avg_price)  # lower price = worse for seller
+            slippage_pp = (best_price - avg_price) / best_price * Decimal(100)
         # Veto: depth under size times 3 at acceptable price (kit/05_STRATEGY_AND_RISK.md)
         usable = (total_depth >= target_shares * Decimal(3)) and (
             slippage_pp <= self.max_slippage_pp

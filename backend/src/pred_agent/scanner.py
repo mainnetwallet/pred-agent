@@ -180,24 +180,27 @@ class Scanner:
 
     def _fetch_page(self, offset: int) -> dict:
         """Fetch one discovery page with rate limiting."""
-        self._enforce_rate_limit()
-        params = {
-            "verbose": "true",
-            "limit": str(self._discover_limit),
-            "offset": str(offset),
-        }
-        if self._omit_cutoff:
-            params["omit_inactive_with_redeemed_on_before"] = self._omit_cutoff
-        resp = self._http.get(f"{self._base_url}/api/v1/market-discovery/discover", params=params)
-        if resp.status_code == 429:
-            retry_after = resp.headers.get("Retry-After")
-            import time as _time
+        max_retries = 5
+        for _attempt in range(max_retries):
+            self._enforce_rate_limit()
+            params = {
+                "verbose": "true",
+                "limit": str(self._discover_limit),
+                "offset": str(offset),
+            }
+            if self._omit_cutoff:
+                params["omit_inactive_with_redeemed_on_before"] = self._omit_cutoff
+            resp = self._http.get(f"{self._base_url}/api/v1/market-discovery/discover", params=params)
+            if resp.status_code == 429:
+                retry_after = resp.headers.get("Retry-After")
+                import time as _time
 
-            wait = float(retry_after) if retry_after else 2.0
-            _time.sleep(wait)
-            return self._fetch_page(offset)
-        resp.raise_for_status()
-        return resp.json()
+                wait = float(retry_after) if retry_after else 2.0
+                _time.sleep(min(wait, 60.0))  # cap wait at 60s
+                continue
+            resp.raise_for_status()
+            return resp.json()
+        raise RuntimeError(f"Failed to fetch discovery page after {max_retries} retries (429 rate limited)")
 
     def _enforce_rate_limit(self) -> None:
         """Keep discovery under about 10 requests/second."""

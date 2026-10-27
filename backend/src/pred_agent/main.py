@@ -20,7 +20,6 @@ def main() -> int:
     """Entry point for the pred-agent process."""
     install_redaction(["", "pred_agent"])
     settings = load_settings()
-    bus = EventBus()
 
     print("pred-agent starting...")
     print(f"Mode: {'LIVE' if settings.live_trading else 'PAPER'}")
@@ -32,7 +31,11 @@ def main() -> int:
     # from this main loop.
 
     # Graceful shutdown on SIGINT/SIGTERM
-    loop = asyncio.get_event_loop()
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
     stop = asyncio.Event()
 
     def _handle_signal() -> None:

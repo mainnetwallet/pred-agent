@@ -119,7 +119,7 @@ class BookFeed:
                               type_reference_ids: list[str]) -> None:
         """Connect to Ably and subscribe to market:{type_reference_id} channels."""
         # Ably SDK is sync; run in executor to avoid blocking the event loop
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         await loop.run_in_executor(
             None, self._ably_run, ably_token_details, type_reference_ids
         )

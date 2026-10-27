@@ -12,8 +12,11 @@ import re
 from typing import Iterable
 
 # Patterns that must never appear in log output.
+# - Private key: 0x + 64 hex chars (32 bytes)
+# - EIP-712 signature: 0x + 130 hex chars (65 bytes: r, s, v)
+# Match 64 to 130 hex chars so both private keys and full signatures are redacted.
 CANARY_PATTERNS: list[re.Pattern[str]] = [
-    re.compile(r"0x[a-fA-F0-9]{64}"),              # private key-like
+    re.compile(r"0x[a-fA-F0-9]{64,130}"),           # private key or EIP-712 signature
     re.compile(r"eyJ[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+"),  # JWT-like
     re.compile(r"PRED_[A-Z_]+"),                    # PRED_* headers
     re.compile(r"Authorization:\s*Bearer\s+\S+"),

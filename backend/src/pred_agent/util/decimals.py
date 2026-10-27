@@ -13,7 +13,7 @@ REDUCE_ONLY_MIN_QTY = Decimal("0.001")
 MAX_QTY_DECIMALS = 3
 
 
-def dec(value: str | int | float | Decimal) -> Decimal:
+def dec(value: str | int | Decimal) -> Decimal:
     """Parse a value to Decimal, rejecting floats that are not exact."""
     if isinstance(value, Decimal):
         return value
