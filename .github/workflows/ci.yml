@@ -28,16 +28,16 @@ jobs:
           --health-retries 5
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
 
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip setuptools wheel  # runner's bundled pip/setuptools have known CVEs (pip-audit)
+          python -m pip install --upgrade pip setuptools wheel
           cd backend
           pip install -e ".[dev]"
 
@@ -48,7 +48,56 @@ jobs:
         run: cd backend && mypy src/
 
       - name: Run pytest
-        run: cd backend && pytest tests/
+        run: |
+          cd backend
+          pytest tests/ -v --tb=short
+        env:
+          DATABASE_URL: postgresql://predagent:postgres@localhost:5432/predagent
 
       - name: Run pip-audit
         run: cd backend && pip-audit
+
+      - name: Update OpenAPI snapshot
+        run: |
+          cd backend
+          python -c "
+          import json, sys
+          sys.path.insert(0, 'src')
+          from pred_agent.control_api.app import create_app
+          app = create_app()
+          schema = app.openapi()
+          with open('openapi.json', 'w') as f:
+              json.dump(schema, f, indent=2)
+          print('OpenAPI snapshot written to backend/openapi.json')
+          print(f'Paths: {list(schema.get(\"paths\", {}).keys())}')
+          "
+
+      - name: Check OpenAPI snapshot committed
+        run: |
+          cd backend
+          if [ -f openapi.json ]; then
+            echo "OpenAPI snapshot exists ($(wc -c < openapi.json) bytes)"
+          else
+            echo "ERROR: openapi.json not generated"
+            exit 1
+          fi
+
+  mobile-test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: mobile/package-lock.json
+
+      - name: Install mobile dependencies
+        run: npm ci
+        working-directory: mobile
+
+      - name: Run mobile Jest tests
+        run: npx jest --no-coverage
+        working-directory: mobile

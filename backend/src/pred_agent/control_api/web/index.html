@@ -4,12 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>PRED Agent</title>
+<meta name="description" content="PRED Agent — Human-in-the-loop sports trading assistant">
 <style>
-  :root{--bg:#0f1115;--card:#181b22;--line:#272b35;--fg:#e8eaf0;--mut:#8a90a0;--ok:#2fbf71;--warn:#e5a93d;--bad:#e5484d;--acc:#4c8dff}
-  @media (prefers-color-scheme: light){:root{--bg:#f4f5f8;--card:#fff;--line:#dfe2ea;--fg:#14161c;--mut:#667085}}
+  :root{--bg:#0f1115;--card:#181b22;--line:#272b35;--fg:#e8eaf0;--mut:#8a90a0;--ok:#2fbf71;--warn:#e5a93d;--bad:#e5484d;--acc:#4c8dff;--chat-user:#1e2a3a;--chat-bot:#1a1e26}
+  @media (prefers-color-scheme: light){:root{--bg:#f4f5f8;--card:#fff;--line:#dfe2ea;--fg:#14161c;--mut:#667085;--chat-user:#e8f0fe;--chat-bot:#f4f5f8}}
   *{box-sizing:border-box}
   body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
-  main{max-width:880px;margin:0 auto;padding:16px}
+  main{max-width:980px;margin:0 auto;padding:16px}
   h1{font-size:18px;margin:0}
   h2{font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--mut);margin:24px 0 8px}
   .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:10px}
@@ -22,8 +23,10 @@
   button.primary{background:var(--acc);border-color:var(--acc);color:#fff}
   button.ok{background:var(--ok);border-color:var(--ok);color:#fff}
   button.bad{background:var(--bad);border-color:var(--bad);color:#fff}
+  button.chip{padding:5px 12px;font-size:13px;border-radius:999px}
   button:disabled{opacity:.5;cursor:default}
-  input{font:inherit;width:100%;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--fg)}
+  input,textarea{font:inherit;width:100%;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--fg)}
+  textarea{resize:vertical;min-height:60px}
   .tag{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;font-weight:600;border:1px solid var(--line)}
   .paper{color:var(--ok)} .live{color:var(--bad)} .paused{color:var(--warn)}
   .mut{color:var(--mut)} .err{color:var(--bad);min-height:1.4em}
@@ -31,6 +34,40 @@
   #login input{margin-bottom:10px}
   .hidden{display:none}
   pre{white-space:pre-wrap;margin:0;font:13px/1.4 ui-monospace,Menlo,monospace}
+
+  /* ── Tab navigation ── */
+  .tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);margin-bottom:16px}
+  .tab{background:none;border:none;border-bottom:2px solid transparent;padding:8px 14px;color:var(--mut);border-radius:0;cursor:pointer;font-size:14px}
+  .tab.active{color:var(--fg);border-bottom-color:var(--acc)}
+
+  /* ── Chat panel ── */
+  #chat-panel{display:flex;flex-direction:column;height:70vh;min-height:400px}
+  #chat-messages{flex:1;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:10px}
+  .chat-msg{max-width:80%;padding:10px 14px;border-radius:12px;word-wrap:break-word;line-height:1.5}
+  .chat-msg.user{background:var(--chat-user);align-self:flex-end;border-radius:12px 12px 4px 12px}
+  .chat-msg.assistant{background:var(--chat-bot);align-self:flex-start;border-radius:12px 12px 12px 4px;border:1px solid var(--line)}
+  .chat-msg .role{font-size:11px;color:var(--mut);margin-bottom:4px}
+  .chat-input-row{display:flex;gap:8px;padding:12px;border-top:1px solid var(--line)}
+  #chat-input{flex:1;min-height:40px;max-height:120px;resize:none;padding:8px 12px}
+  #chat-send{width:80px;flex-shrink:0}
+  .chips{display:flex;gap:6px;flex-wrap:wrap;padding:8px 12px 0}
+
+  /* ── Chat cards ── */
+  .chat-card{margin-top:8px;border:1px solid var(--line);border-radius:8px;padding:10px;background:var(--bg)}
+  .chat-card h4{margin:0 0 6px;font-size:13px;color:var(--mut);text-transform:uppercase}
+  .chat-card .card-actions{display:flex;gap:6px;margin-top:8px}
+  .fixture-row{padding:4px 0;border-bottom:1px solid var(--line);font-size:13px}
+  .fixture-row:last-child{border:none}
+  .badge{display:inline-block;padding:2px 6px;border-radius:4px;font-size:11px;font-weight:700;margin-right:4px}
+  .badge.live{background:#e5484d22;color:var(--bad)}
+  .badge.upcoming{background:#4c8dff22;color:var(--acc)}
+
+  /* ── Rules ── */
+  .rule-status{font-size:11px;font-weight:700;padding:2px 6px;border-radius:4px}
+  .rule-status.ACTIVE{background:#2fbf7122;color:var(--ok)}
+  .rule-status.PENDING{background:#e5a93d22;color:var(--warn)}
+  .rule-status.DONE{background:#8a90a022;color:var(--mut)}
+  .rule-status.BLOCKED{background:#e5484d22;color:var(--bad)}
 </style>
 </head>
 <body>
@@ -52,38 +89,96 @@
       <button id="logout">Log out</button>
     </div>
 
-    <h2>Status</h2>
-    <div class="card grid">
-      <div class="stat"><b id="exposure">-</b><span>Open exposure</span></div>
-      <div class="stat"><b id="pnl">-</b><span>Daily PnL</span></div>
-      <div class="stat"><b id="pending">-</b><span>Pending proposals</span></div>
+    <!-- Tab bar -->
+    <div class="tabs">
+      <button class="tab active" id="tab-dashboard" onclick="showTab('dashboard')">Dashboard</button>
+      <button class="tab" id="tab-chat" onclick="showTab('chat')">💬 Chat</button>
+      <button class="tab" id="tab-fixtures" onclick="showTab('fixtures')">Fixtures</button>
+      <button class="tab" id="tab-rules" onclick="showTab('rules')">Rules</button>
     </div>
-    <div class="row">
-      <button id="pauseBtn">Pause</button>
-      <button id="resumeBtn">Resume</button>
-      <span class="grow"></span>
-      <button id="panicBtn" class="bad">PANIC</button>
+
+    <!-- Dashboard tab -->
+    <div id="pane-dashboard">
+      <h2>Status</h2>
+      <div class="card grid">
+        <div class="stat"><b id="exposure">-</b><span>Open exposure</span></div>
+        <div class="stat"><b id="pnl">-</b><span>Daily PnL</span></div>
+        <div class="stat"><b id="pending">-</b><span>Pending proposals</span></div>
+        <div class="stat"><b id="active-rules">-</b><span>Active rules</span></div>
+      </div>
+      <div class="row">
+        <button id="pauseBtn">Pause</button>
+        <button id="resumeBtn">Resume</button>
+        <span class="grow"></span>
+        <button id="panicBtn" class="bad">PANIC</button>
+      </div>
+      <p id="msg" class="err"></p>
+
+      <h2>Proposals</h2>
+      <div id="proposals"></div>
+
+      <h2>Positions</h2>
+      <div id="positions"></div>
+
+      <h2>Orders</h2>
+      <div id="orders"></div>
+
+      <h2>Limits</h2>
+      <div id="limits" class="card"></div>
+
+      <h2>LLM</h2>
+      <div class="card row">
+        <span id="llmInfo" class="grow mut">-</span>
+        <button id="llmTest">Test LLM</button>
+      </div>
+      <p id="llmMsg" class="mut"></p>
     </div>
-    <p id="msg" class="err"></p>
 
-    <h2>Proposals</h2>
-    <div id="proposals"></div>
-
-    <h2>Positions</h2>
-    <div id="positions"></div>
-
-    <h2>Orders</h2>
-    <div id="orders"></div>
-
-    <h2>Limits</h2>
-    <div id="limits" class="card"></div>
-
-    <h2>LLM</h2>
-    <div class="card row">
-      <span id="llmInfo" class="grow mut">-</span>
-      <button id="llmTest">Test LLM</button>
+    <!-- Chat tab -->
+    <div id="pane-chat" class="hidden">
+      <div class="card" id="chat-panel">
+        <div id="chat-messages"></div>
+        <div class="chips" id="chat-chips">
+          <button class="chip" onclick="sendChip('ekhon live match ki ki ache?')">🟢 Live matches</button>
+          <button class="chip" onclick="sendChip('upcoming match gulo dekhao')">🕐 Upcoming</button>
+          <button class="chip" onclick="sendChip('আমার positions দেখাও')">📊 Positions</button>
+          <button class="chip" onclick="sendChip('sob rules dekhao')">📋 Rules</button>
+          <button class="chip" onclick="sendChip('/status')">⚙️ Status</button>
+        </div>
+        <div class="chat-input-row">
+          <textarea id="chat-input" placeholder="Chat in Bengali, Banglish or English…" rows="1"></textarea>
+          <button id="chat-send" class="primary">Send</button>
+        </div>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <span class="grow mut" id="chat-status"></span>
+        <button id="chat-clear" class="chip">Clear chat</button>
+      </div>
     </div>
-    <p id="llmMsg" class="mut"></p>
+
+    <!-- Fixtures tab -->
+    <div id="pane-fixtures" class="hidden">
+      <div class="row" style="margin-bottom:12px">
+        <button class="chip active" onclick="loadFixtures(null)" id="fx-all">All</button>
+        <button class="chip" onclick="loadFixtures('live')" id="fx-live">🟢 Live</button>
+        <button class="chip" onclick="loadFixtures('upcoming')" id="fx-upcoming">🕐 Upcoming</button>
+        <span class="grow"></span>
+        <button onclick="loadFixtures(currentFxState)" class="chip">↻ Refresh</button>
+      </div>
+      <div id="fixtures-list"></div>
+    </div>
+
+    <!-- Rules tab -->
+    <div id="pane-rules" class="hidden">
+      <div class="row" style="margin-bottom:12px">
+        <button class="chip" onclick="loadRules(null)">All</button>
+        <button class="chip" onclick="loadRules('ACTIVE')">Active</button>
+        <button class="chip" onclick="loadRules('PENDING')">Pending</button>
+        <span class="grow"></span>
+        <button onclick="loadRules(null)" class="chip">↻ Refresh</button>
+      </div>
+      <div id="rules-list"></div>
+    </div>
   </section>
 </main>
 
@@ -92,14 +187,23 @@
 const $ = (id) => document.getElementById(id);
 let token = localStorage.getItem("pred_token");
 let timer = null;
+let chatSessionId = null;
+let currentFxState = null;
 
-function el(tag, props, ...kids) {
-  const e = document.createElement(tag);
-  Object.assign(e, props || {});
-  kids.forEach((k) => e.append(k));
-  return e;
+// ── Tab navigation ──────────────────────────────────────────
+function showTab(name) {
+  ["dashboard","chat","fixtures","rules"].forEach((t) => {
+    $(("pane-" + t)).classList.toggle("hidden", t !== name);
+    $("tab-" + t).classList.toggle("active", t === name);
+  });
+  if (name === "chat" && $("chat-messages").childElementCount === 0) {
+    appendChatMsg("assistant", "Assalamu Alaikum! 🏟️ PRED Agent here. আমি বাংলা, Banglish বা English এ কথা বলতে পারি।\n\nজিজ্ঞেস করুন: live match, positions, rules, বা trade/rule তৈরির জন্য।");
+  }
+  if (name === "fixtures") loadFixtures(currentFxState);
+  if (name === "rules") loadRules(null);
 }
 
+// ── API helper ──────────────────────────────────────────────
 async function api(path, opts = {}) {
   const headers = { "Content-Type": "application/json" };
   if (token) headers.Authorization = "Bearer " + token;
@@ -107,11 +211,10 @@ async function api(path, opts = {}) {
   try {
     resp = await fetch(path, { ...opts, headers });
   } catch (_) {
-    return { ok: false, error: { code: "network", message: "Cannot reach the server. Check your connection." } };
+    return { ok: false, error: { code: "network", message: "Cannot reach the server." } };
   }
   let body = {};
   try { body = await resp.json(); } catch (_) {}
-  // A wrong password on /v1/login is a 401 too; only a rejected *session* signs us out.
   if (resp.status === 401 && token && path !== "/v1/login") { signOut(); }
   if (!body || typeof body !== "object") body = {};
   if (!resp.ok && !body.error) body.error = { code: "http_error", message: "HTTP " + resp.status };
@@ -130,7 +233,6 @@ function signOut() {
 }
 
 async function logout() {
-  // Tell the server to invalidate the token, then drop it locally either way.
   const t = token;
   if (t) {
     try { await fetch("/v1/logout", { method: "POST", headers: { Authorization: "Bearer " + t } }); } catch (_) {}
@@ -143,40 +245,35 @@ function showApp() {
   $("app").classList.remove("hidden");
   refresh();
   clearInterval(timer);
-  timer = setInterval(refresh, 5000);
+  timer = setInterval(refresh, 6000);
+  loadLlm();
 }
 
+// ── Login ───────────────────────────────────────────────────
 $("loginBtn").onclick = async () => {
   const btn = $("loginBtn");
   $("loginErr").textContent = "";
   const username = $("u").value.trim();
   const password = $("p").value;
   if (!username || !password) { $("loginErr").textContent = "Enter username and password"; return; }
-  btn.disabled = true;
-  btn.textContent = "Signing in...";
+  btn.disabled = true; btn.textContent = "Signing in...";
   try {
-    const r = await api("/v1/login", {
-      method: "POST",
-      body: JSON.stringify({ username, password }),
-    });
+    const r = await api("/v1/login", { method: "POST", body: JSON.stringify({ username, password }) });
     if (r.ok && r.data && r.data.token) {
       token = r.data.token;
       localStorage.setItem("pred_token", token);
       $("p").value = "";
       showApp();
-      loadLlm();
     } else {
       $("loginErr").textContent = (r.error && r.error.message) || "Login failed";
     }
-  } finally {
-    btn.disabled = false;
-    btn.textContent = "Sign in";
-  }
+  } finally { btn.disabled = false; btn.textContent = "Sign in"; }
 };
 $("p").addEventListener("keydown", (e) => { if (e.key === "Enter") $("loginBtn").click(); });
 $("u").addEventListener("keydown", (e) => { if (e.key === "Enter") $("p").focus(); });
 $("logout").onclick = logout;
 
+// ── Dashboard actions ────────────────────────────────────────
 async function act(path, confirmText) {
   if (confirmText && !confirm(confirmText)) return;
   const r = await api(path, { method: "POST", body: "{}" });
@@ -185,21 +282,26 @@ async function act(path, confirmText) {
 }
 $("pauseBtn").onclick = () => act("/v1/pause");
 $("resumeBtn").onclick = () => act("/v1/resume");
-$("panicBtn").onclick = () =>
-  act("/v1/panic", "PANIC: pause the agent, reject all pending proposals and cancel open orders?");
+$("panicBtn").onclick = () => act("/v1/panic", "PANIC: pause, reject proposals, cancel orders AND rules?");
 
 function usd(v) { const n = Number(v); return isNaN(n) ? "-" : "$" + n.toFixed(2); }
+
+function el(tag, props, ...kids) {
+  const e = document.createElement(tag);
+  Object.assign(e, props || {});
+  kids.forEach((k) => e.append(k));
+  return e;
+}
 
 function proposalCard(p) {
   const pending = p.status === "PROPOSED";
   const head = el("div", { className: "row" },
-    el("b", { className: "grow", textContent: `${p.side.toUpperCase()} @ ${p.price_cents}c  qty ${p.quantity}` }),
+    el("b", { className: "grow", textContent: p.side.toUpperCase() + " @ " + p.price_cents + "c  qty " + p.quantity }),
     el("span", { className: "tag", textContent: p.status }));
   const meta = el("div", { className: "mut",
-    textContent: `${p.mode} · fixture ${p.fixture_id} · amount ${usd(p.amount_usd)} · edge ${p.edge_pp}pp · p_fair ${p.p_fair}` });
+    textContent: p.mode + " · fixture " + p.fixture_id + " · " + usd(p.amount_usd) + " · " + p.edge_pp + "pp" });
   const card = el("div", { className: "card" }, head, meta);
-  if (p.reasons.length) card.append(el("div", { textContent: "Why: " + p.reasons.slice(0, 3).join("; ") }));
-  if (p.risks.length) card.append(el("div", { className: "mut", textContent: "Risks: " + p.risks.slice(0, 2).join("; ") }));
+  if (p.reasons && p.reasons.length) card.append(el("div", { textContent: "Why: " + p.reasons.slice(0, 3).join("; ") }));
   if (pending) {
     const amt = el("input", { placeholder: "Amount USD (optional)", inputMode: "decimal", style: "max-width:170px" });
     const ok = el("button", { className: "ok", textContent: "Approve" });
@@ -234,14 +336,15 @@ async function refresh() {
   $("exposure").textContent = usd(s.exposure);
   $("pnl").textContent = usd(s.daily_pnl);
   $("pending").textContent = s.pending_proposals;
+  $("active-rules").textContent = s.active_rules || 0;
   $("pauseBtn").disabled = s.paused;
   $("resumeBtn").disabled = !s.paused;
 
   fillList("proposals", pr.data || [], proposalCard, "No proposals yet.");
   fillList("positions", po.data || [], (p) => el("div", { className: "card",
-    textContent: `${p.side} ${p.quantity} @ ${p.avg_price_cents}c · cost ${usd(p.cost_usd)} · ${p.market_id}` }), "No open positions.");
+    textContent: p.side + " " + p.quantity + " @ " + p.avg_price_cents + "c · cost " + usd(p.cost_usd) + " · " + p.market_id }), "No open positions.");
   fillList("orders", od.data || [], (o) => el("div", { className: "card",
-    textContent: `${o.status} · ${o.side} ${o.quantity} @ ${o.price_cents}c · filled ${o.filled_qty}` }), "No orders.");
+    textContent: (o.status || o.state) + " · " + o.side + " " + o.quantity + " @ " + o.price_cents + "c · filled " + o.filled_qty }), "No orders.");
 
   const box = $("limits");
   box.replaceChildren();
@@ -255,7 +358,7 @@ async function loadLlm() {
   const r = await api("/v1/llm");
   if (!r.ok) return;
   $("llmInfo").textContent = r.data.configured
-    ? `${r.data.model} @ ${r.data.base_url}` : "Not configured (set LLM_API_KEY and LLM_MODEL)";
+    ? r.data.model + " @ " + r.data.base_url : "Not configured (set LLM_API_KEY and LLM_MODEL)";
 }
 $("llmTest").onclick = async () => {
   $("llmMsg").textContent = "Testing...";
@@ -264,7 +367,215 @@ $("llmTest").onclick = async () => {
     : ((r.error && r.error.message) || "LLM test failed");
 };
 
-if (token) { showApp(); loadLlm(); } else { $("login").classList.remove("hidden"); }
+// ── Fixtures tab ─────────────────────────────────────────────
+async function loadFixtures(state) {
+  currentFxState = state;
+  const path = "/v1/fixtures" + (state ? "?state=" + state : "");
+  const r = await api(path);
+  const box = $("fixtures-list");
+  box.replaceChildren();
+  if (!r.ok) { box.append(el("div", { className: "err", textContent: (r.error && r.error.message) || "Failed to load" })); return; }
+  const items = r.data || [];
+  if (!items.length) { box.append(el("div", { className: "mut card", textContent: "No fixtures found." })); return; }
+  items.forEach((fx) => {
+    const badge = el("span", { className: "badge " + fx.state, textContent: fx.state.toUpperCase() });
+    const score = (fx.home_score != null && fx.away_score != null)
+      ? ` ${fx.home_score}–${fx.away_score}${fx.minute ? " " + fx.minute + "'" : ""}` : "";
+    const kickoff = fx.kickoff_dhaka
+      ? " · " + new Date(fx.kickoff_dhaka).toLocaleString("en-BD", { timeZone: "Asia/Dhaka", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })
+      : "";
+    const row = el("div", { className: "card fixture-row" },
+      badge,
+      el("span", { textContent: (fx.home_team || "?") + " vs " + (fx.away_team || "?") + score + kickoff }),
+    );
+    box.append(row);
+  });
+}
+
+// ── Rules tab ────────────────────────────────────────────────
+async function loadRules(status) {
+  const path = "/v1/rules" + (status ? "?status=" + status : "");
+  const r = await api(path);
+  const box = $("rules-list");
+  box.replaceChildren();
+  if (!r.ok) { box.append(el("div", { className: "err", textContent: (r.error && r.error.message) || "Failed" })); return; }
+  const rules = r.data || [];
+  if (!rules.length) { box.append(el("div", { className: "mut card", textContent: "No rules found. Use chat to create exit rules." })); return; }
+  rules.forEach((rule) => {
+    const statusEl = el("span", { textContent: rule.status });
+    statusEl.className = "rule-status " + rule.status;
+    const card = el("div", { className: "card" },
+      el("div", { className: "row" },
+        el("b", { className: "grow", textContent: rule.kind + " — " + rule.trigger_type + " @ " + rule.trigger_value }),
+        statusEl,
+      ),
+      el("div", { className: "mut", textContent: "market: " + rule.market_id + " · size: " + rule.size + " · via: " + rule.created_via }),
+    );
+    if (rule.last_eval_note) {
+      card.append(el("div", { className: "mut", style: "font-size:12px;margin-top:4px", textContent: rule.last_eval_note }));
+    }
+    const actions = el("div", { className: "row", style: "margin-top:8px;gap:6px" });
+    if (rule.status === "PENDING") {
+      const confirmBtn = el("button", { className: "ok", textContent: "Confirm Rule" });
+      confirmBtn.onclick = async () => {
+        const res = await api(`/v1/rules/${rule.id}/confirm`, { method: "POST", body: "{}" });
+        $("msg").textContent = res.ok ? "" : ((res.error && res.error.message) || "Failed");
+        loadRules(null);
+      };
+      actions.append(confirmBtn);
+    }
+    if (["PENDING", "ACTIVE"].includes(rule.status)) {
+      const cancelBtn = el("button", { className: "bad", textContent: "Cancel" });
+      cancelBtn.onclick = async () => {
+        await api(`/v1/rules/${rule.id}/cancel`, { method: "POST", body: "{}" });
+        loadRules(null);
+      };
+      actions.append(cancelBtn);
+    }
+    if (actions.children.length) card.append(actions);
+    box.append(card);
+  });
+}
+
+// ── Chat tab ─────────────────────────────────────────────────
+function appendChatMsg(role, text, cards) {
+  const box = $("chat-messages");
+  const msg = el("div", { className: "chat-msg " + role });
+  const roleLabel = el("div", { className: "role", textContent: role === "user" ? "You" : "Agent" });
+  // Use textContent always — NEVER innerHTML with dynamic model output (XSS guard)
+  const content = el("div");
+  content.textContent = text;
+  msg.append(roleLabel, content);
+
+  if (cards && cards.length) {
+    cards.forEach((card) => {
+      const cardEl = renderCard(card);
+      if (cardEl) msg.append(cardEl);
+    });
+  }
+
+  box.append(msg);
+  box.scrollTop = box.scrollHeight;
+}
+
+function renderCard(card) {
+  const wrap = el("div", { className: "chat-card" });
+  if (card.type === "fixture_list") {
+    wrap.append(el("h4", { textContent: "Fixtures" }));
+    const items = (card.data && card.data.fixtures) || [];
+    items.slice(0, 8).forEach((fx) => {
+      const badge = el("span", { className: "badge " + (fx.state || ""), textContent: (fx.state || "?").toUpperCase() });
+      const row = el("div", { className: "fixture-row" });
+      row.append(badge);
+      const label = document.createTextNode((fx.home_team || "?") + " vs " + (fx.away_team || "?"));
+      row.append(label);
+      wrap.append(row);
+    });
+    return wrap;
+  }
+  if (card.type === "rule") {
+    const d = card.data || {};
+    wrap.append(el("h4", { textContent: "Exit Rule" }));
+    wrap.append(el("div", { textContent: d.kind + " — " + d.trigger_type + " @ " + d.trigger_value + " (size: " + d.size + ")" }));
+    if (d.status === "PENDING") {
+      const actions = el("div", { className: "card-actions" });
+      const confirmBtn = el("button", { className: "ok", textContent: "✓ Confirm Rule" });
+      confirmBtn.onclick = async () => {
+        const r = await api(`/v1/rules/${d.id}/confirm`, { method: "POST", body: "{}" });
+        confirmBtn.disabled = true;
+        confirmBtn.textContent = r.ok ? "Confirmed ✓" : "Failed";
+        if (r.ok) loadRules(null);
+      };
+      const cancelBtn = el("button", { className: "bad", textContent: "✗ Cancel" });
+      cancelBtn.onclick = async () => {
+        await api(`/v1/rules/${d.id}/cancel`, { method: "POST", body: "{}" });
+        cancelBtn.disabled = true; cancelBtn.textContent = "Cancelled";
+      };
+      actions.append(confirmBtn, cancelBtn);
+      wrap.append(actions);
+    }
+    return wrap;
+  }
+  if (card.type === "proposal") {
+    const d = card.data || {};
+    wrap.append(el("h4", { textContent: "Trade Proposal" }));
+    wrap.append(el("div", { textContent: d.side + " @ " + d.price_cents + "¢ · " + d.amount_usd + " USD · " + d.edge_pp + "pp edge" }));
+    if (d.status === "PROPOSED") {
+      const actions = el("div", { className: "card-actions" });
+      const okBtn = el("button", { className: "ok", textContent: "✓ Approve" });
+      okBtn.onclick = async () => {
+        const r = await api(`/v1/proposals/${d.id}/approve`, { method: "POST", body: "{}" });
+        okBtn.disabled = true;
+        okBtn.textContent = r.ok ? "Approved ✓" : "Failed";
+        if (r.ok) refresh();
+      };
+      const noBtn = el("button", { className: "bad", textContent: "✗ Reject" });
+      noBtn.onclick = async () => {
+        await api(`/v1/proposals/${d.id}/reject`, { method: "POST", body: "{}" });
+        noBtn.disabled = true; noBtn.textContent = "Rejected";
+      };
+      actions.append(okBtn, noBtn);
+      wrap.append(actions);
+    }
+    return wrap;
+  }
+  return null;
+}
+
+async function sendChatMessage(text) {
+  if (!text.trim()) return;
+  appendChatMsg("user", text);
+  $("chat-input").value = "";
+  $("chat-send").disabled = true;
+  $("chat-status").textContent = "Thinking…";
+
+  const r = await api("/v1/chat", {
+    method: "POST",
+    body: JSON.stringify({ message: text, session_id: chatSessionId }),
+  });
+
+  $("chat-send").disabled = false;
+  $("chat-status").textContent = "";
+
+  if (!r.ok && r.error) {
+    if (r.error.code === "llm_not_configured") {
+      appendChatMsg("assistant", "⚠️ LLM কনফিগার করা নেই। সার্ভারে LLM_API_KEY এবং LLM_MODEL সেট করুন।");
+    } else if (r.error.code === "rate_limited") {
+      appendChatMsg("assistant", "⚠️ একটু ধীরে — বেশি বার্তা পাঠাচ্ছেন। একটু অপেক্ষা করুন।");
+    } else {
+      appendChatMsg("assistant", "❌ " + (r.error.message || "Error occurred."));
+    }
+    return;
+  }
+
+  if (r.data) {
+    if (!chatSessionId) chatSessionId = r.data.session_id;
+    appendChatMsg("assistant", r.data.reply || "", r.data.cards);
+  }
+}
+
+function sendChip(text) {
+  sendChatMessage(text);
+  showTab("chat");
+}
+
+$("chat-send").onclick = () => sendChatMessage($("chat-input").value);
+$("chat-input").addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey) {
+    e.preventDefault();
+    sendChatMessage($("chat-input").value);
+  }
+});
+$("chat-clear").onclick = async () => {
+  if (chatSessionId) {
+    await api(`/v1/chat/${chatSessionId}`, { method: "DELETE" });
+    chatSessionId = null;
+  }
+  $("chat-messages").replaceChildren();
+  appendChatMsg("assistant", "Chat cleared. How can I help?");
+};
+
+if (token) { showApp(); } else { $("login").classList.remove("hidden"); }
 </script>
 </body>
 </html>

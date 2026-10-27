@@ -85,7 +85,7 @@ class LoginManager:
         payload = base64.urlsafe_b64encode(json.dumps(body).encode()).decode().rstrip("=")
         return f"s1.{payload}.{self._sign(payload)}"
 
-    def verify(self, token: str) -> str | None:
+    def verify(self, token: str) -> str | None:  # noqa: PLR0911
         """Return the username if the token is valid and unexpired."""
         if not self.enabled:
             return None

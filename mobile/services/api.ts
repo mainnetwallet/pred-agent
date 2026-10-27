@@ -1,4 +1,4 @@
-// API client — generated from Control API OpenAPI schema (kit/07_CONTROL_API.md)
+// API client — Phase 8 additions: chat, rules, fixtures with state
 // Money is always a decimal string; prices in cents as strings.
 
 import {
@@ -6,12 +6,16 @@ import {
   StatusResponse,
   FixtureSummary,
   FixtureDetail,
+  FixtureState,
   OrderBookResponse,
   Proposal,
   Order,
   Position,
   Limit,
   Device,
+  Rule,
+  ChatTurn,
+  ChatHistory,
 } from "../types/api";
 import { DEFAULT_SERVER_URL } from "../utils/defaults";
 
@@ -43,8 +47,6 @@ class ApiClient {
     path: string,
     opts: RequestInit = {}
   ): Promise<ApiEnvelope<T>> {
-    // Remember which token this request was sent with: a 401 only means "session expired"
-    // if we actually sent the current token (not if it was set while the request was in flight).
     const sentToken = this.token;
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
@@ -78,14 +80,14 @@ class ApiClient {
     return body as ApiEnvelope<T>;
   }
 
-  // ---- Status ----
+  // ── Status ────────────────────────────────────────────────
   async getStatus(): Promise<ApiEnvelope<StatusResponse>> {
     return this.request<StatusResponse>("/v1/status");
   }
 
-  // ---- Fixtures ----
-  async getFixtures(state?: "live" | "upcoming"): Promise<ApiEnvelope<FixtureSummary[]>> {
-    const params = state ? `?state=${state}` : "";
+  // ── Fixtures (Phase 8: state filter + detail) ─────────────
+  async getFixtures(state?: FixtureState): Promise<ApiEnvelope<FixtureSummary[]>> {
+    const params = state && state !== "all" ? `?state=${state}` : "";
     return this.request<FixtureSummary[]>(`/v1/fixtures${params}`);
   }
 
@@ -93,12 +95,12 @@ class ApiClient {
     return this.request<FixtureDetail>(`/v1/fixtures/${id}`);
   }
 
-  // ---- Order book ----
+  // ── Order book ────────────────────────────────────────────
   async getOrderBook(marketId: string): Promise<ApiEnvelope<OrderBookResponse>> {
     return this.request<OrderBookResponse>(`/v1/markets/${marketId}/book`);
   }
 
-  // ---- Proposals ----
+  // ── Proposals ────────────────────────────────────────────
   async getProposals(status?: string): Promise<ApiEnvelope<Proposal[]>> {
     const params = status ? `?status=${status}` : "";
     return this.request<Proposal[]>(`/v1/proposals${params}`);
@@ -122,7 +124,7 @@ class ApiClient {
     });
   }
 
-  // ---- Orders ----
+  // ── Orders ────────────────────────────────────────────────
   async getOrders(): Promise<ApiEnvelope<Order[]>> {
     return this.request<Order[]>("/v1/orders");
   }
@@ -134,7 +136,7 @@ class ApiClient {
     });
   }
 
-  // ---- Positions ----
+  // ── Positions ─────────────────────────────────────────────
   async getPositions(): Promise<ApiEnvelope<Position[]>> {
     return this.request<Position[]>("/v1/positions");
   }
@@ -145,7 +147,7 @@ class ApiClient {
     });
   }
 
-  // ---- Limits ----
+  // ── Limits ────────────────────────────────────────────────
   async getLimits(): Promise<ApiEnvelope<Limit[]>> {
     return this.request<Limit[]>("/v1/limits");
   }
@@ -158,7 +160,7 @@ class ApiClient {
     });
   }
 
-  // ---- Pause / resume / panic ----
+  // ── Pause / resume / panic ────────────────────────────────
   async pause(xConfirm?: string): Promise<ApiEnvelope<StatusResponse>> {
     return this.request<StatusResponse>("/v1/pause", {
       method: "POST",
@@ -180,7 +182,7 @@ class ApiClient {
     });
   }
 
-  // ---- Login (username/password are fixed in the server env) ----
+  // ── Login / Logout ────────────────────────────────────────
   async login(username: string, password: string): Promise<ApiEnvelope<{ token: string; expires_in: number }>> {
     return this.request<{ token: string; expires_in: number }>("/v1/login", {
       method: "POST",
@@ -188,12 +190,11 @@ class ApiClient {
     });
   }
 
-  // Invalidates the session token on the server (best effort; caller clears local state).
   async logout(): Promise<ApiEnvelope<{ logged_out: boolean }>> {
     return this.request<{ logged_out: boolean }>("/v1/logout", { method: "POST" });
   }
 
-  // ---- Pairing (legacy) ----
+  // ── Pairing / Devices ─────────────────────────────────────
   async pair(code: string, deviceName: string, devicePublicKey: string): Promise<ApiEnvelope<{ device_token: string }>> {
     return this.request<{ device_token: string }>("/v1/pair", {
       method: "POST",
@@ -201,7 +202,6 @@ class ApiClient {
     });
   }
 
-  // ---- Devices ----
   async getDevices(): Promise<ApiEnvelope<{ devices: Device[] }>> {
     return this.request<{ devices: Device[] }>("/v1/devices");
   }
@@ -212,7 +212,46 @@ class ApiClient {
     });
   }
 
-  // ---- Reports ----
+  // ── Rules (Phase 8) ───────────────────────────────────────
+  async getRules(status?: string): Promise<ApiEnvelope<Rule[]>> {
+    const params = status ? `?status=${status}` : "";
+    return this.request<Rule[]>(`/v1/rules${params}`);
+  }
+
+  async confirmRule(id: string, xConfirm?: string): Promise<ApiEnvelope<Rule>> {
+    return this.request<Rule>(`/v1/rules/${id}/confirm`, {
+      method: "POST",
+      body: JSON.stringify({}),
+      headers: xConfirm ? { "X-Confirm": xConfirm } : {},
+    });
+  }
+
+  async cancelRule(id: string): Promise<ApiEnvelope<Rule>> {
+    return this.request<Rule>(`/v1/rules/${id}/cancel`, {
+      method: "POST",
+      body: JSON.stringify({}),
+    });
+  }
+
+  // ── Chat (Phase 8) ────────────────────────────────────────
+  async chat(message: string, sessionId?: string | null): Promise<ApiEnvelope<ChatTurn>> {
+    return this.request<ChatTurn>("/v1/chat", {
+      method: "POST",
+      body: JSON.stringify({ message, ...(sessionId ? { session_id: sessionId } : {}) }),
+    });
+  }
+
+  async getChatHistory(sessionId: string): Promise<ApiEnvelope<ChatHistory>> {
+    return this.request<ChatHistory>(`/v1/chat/${sessionId}`);
+  }
+
+  async clearChat(sessionId: string): Promise<ApiEnvelope<{ cleared: boolean }>> {
+    return this.request<{ cleared: boolean }>(`/v1/chat/${sessionId}`, {
+      method: "DELETE",
+    });
+  }
+
+  // ── Reports ───────────────────────────────────────────────
   async getDailyReport(): Promise<ApiEnvelope<unknown>> {
     return this.request("/v1/reports/daily");
   }
