@@ -50,6 +50,11 @@ _UPCOMING_STATUSES = {"not_started", "ns", "upcoming", "pre_match", "scheduled",
 _UNKNOWN_GS_LOG: set[str] = set()   # log each unknown value once
 
 
+def _first(*vals: Any) -> Any:
+    """First value that is not None (0 is a valid score)."""
+    return next((v for v in vals if v is not None), None)
+
+
 def _fixture_state(game_status: str | None, kickoff: datetime | None) -> str:
     """Derive live/upcoming/other from game_status + kickoff heuristic.
     Fail-closed: unknown game_status → 'other' (not treated as live).
@@ -221,7 +226,7 @@ class FixtureCache:
                     kickoff = datetime.fromisoformat(kickoff_str.replace("Z", "+00:00"))
                 except ValueError:
                     pass
-            gs = fix.get("game_status")
+            gs = fix.get("game_status") or fix.get("sports_game_status")
             fstate = _fixture_state(gs, kickoff)
 
             if state and fstate != state:
@@ -248,8 +253,8 @@ class FixtureCache:
                 "kickoff_dhaka": kickoff_dhaka,
                 "state": fstate,
                 "game_status": gs,
-                "home_score": fix.get("home_score"),
-                "away_score": fix.get("away_score"),
+                "home_score": _first(fix.get("home_team_score"), fix.get("sports_home_score"), fix.get("home_score")),
+                "away_score": _first(fix.get("away_team_score"), fix.get("sports_away_score"), fix.get("away_score")),
                 "minute": fix.get("minute"),
                 "markets": [
                     {

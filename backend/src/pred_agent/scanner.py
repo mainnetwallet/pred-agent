@@ -73,7 +73,7 @@ class Scanner:
         stats |= {
             "state": "scanning", "pages": 0, "total": None, "seen": 0, "families": {}, "moneyline_statuses": {},
             "dropped_league": 0, "dropped_no_fixture": 0, "dropped_no_active_child": 0,
-            "kept": 0, "error": None, "cutoff": None, "family": self._family,
+            "kept": 0, "game_statuses": {}, "error": None, "cutoff": None, "family": self._family,
         }
         stats["cutoff"] = self._scan_cutoff
         while True:
@@ -115,6 +115,17 @@ class Scanner:
                 if not active_children:
                     stats["dropped_no_active_child"] += 1
                     continue
+                # Docs also expose live data under entry["sports_info"]; merge it in without
+                # overriding fixture fields so downstream code can fall back to it.
+                si = entry.get("sports_info") or {}
+                fixture = {
+                    **fixture,
+                    "sports_game_status": si.get("game_status"),
+                    "sports_home_score": si.get("home_score"),
+                    "sports_away_score": si.get("away_score"),
+                }
+                gs_key = f"{fixture.get('game_status')}|{si.get('game_status')}"
+                stats["game_statuses"][gs_key] = stats["game_statuses"].get(gs_key, 0) + 1
                 results.append(
                     DiscoveredParent(
                         parent_market_id=pmd.get("parent_market_id", ""),
