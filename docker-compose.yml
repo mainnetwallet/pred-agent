@@ -1,0 +1,60 @@
+# docker-compose.yml — PRED Agent deployment
+# Grounded in kit/09_CONFIG_SECURITY_DEPLOY.md (Deploy section)
+#
+# Usage:
+#   cp backend/.env.example backend/.env   # fill in secrets, chmod 600
+#   docker compose up -d
+#
+# The Control API is bound to the Tailscale interface only.
+# Never expose ports 8000 (Control API) to the public internet.
+
+version: "3.8"
+
+services:
+  pred-agent:
+    build:
+      context: ..
+      dockerfile: backend/Dockerfile
+    container_name: pred-agent
+    restart: unless-stopped
+    env_file:
+      - backend/.env
+    volumes:
+      - pred-agent-data:/app/backend
+      - ./deploy:/app/deploy:ro
+    depends_on:
+      - db
+    networks:
+      - pred-net
+    # Bind to Tailscale interface if available; fallback to localhost
+    # Set CONTROL_API_BIND in .env to your Tailscale IP (e.g. 100.x.y.z)
+    # Do NOT publish port 8000 publicly.
+    # If you need local testing only: ports: ["127.0.0.1:8000:8000"]
+
+  db:
+    image: postgres:15-alpine
+    container_name: pred-agent-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: predagent
+      POSTGRES_USER: predagent
+      POSTGRES_PASSWORD_FILE: /run/secrets/db_password
+    secrets:
+      - db_password
+    volumes:
+      - pred-agent-db-data:/var/lib/postgresql/data
+    networks:
+      - pred-net
+    # Postgres is not exposed publicly; only reachable via pred-net
+
+volumes:
+  pred-agent-data:
+  pred-agent-db-data:
+
+secrets:
+  db_password:
+    file: ./deploy/secrets/db_password.txt
+
+networks:
+  pred-net:
+    driver: bridge

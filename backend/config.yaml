@@ -1,0 +1,48 @@
+# PRED Agent — non-secret configuration (validated & frozen at startup)
+# Contract addresses and hosts come from discovery at runtime where specified.
+
+host: "https://www.pred.app"
+chain_id: 8453
+usdc_address: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
+create_proxy_factory: "0xA077e7aaBF2e3c0155F83789e95f46602D03F7f0"
+
+auth_login_message: "Sign in to PRED Trading Platform"
+refresh_threshold_seconds: 300
+
+scan_interval_seconds: 30
+discover_limit: 50
+discover_max_rps: 10
+omit_inactive_with_redeemed_on_before: null  # set to current UTC RFC3339 at scan start
+
+min_edge_pp: 3.0          # advisory mode doubles to 6.0
+kelly_fraction: 0.25      # advisory mode halves result
+max_trade_usd: 2.0        # live start cap
+per_fixture_pct: 0.04     # 4% of bankroll
+total_open_exposure_pct: 0.15  # 15% of bankroll
+daily_loss_pct: 0.05      # 5% of bankroll, then pause
+max_open_positions: 8
+min_opening_notional_usd: 0.90
+max_spread_cents: 6
+max_slippage_pp: 1.5
+proposal_ttl_seconds: 300
+research_max_age_min: 90
+book_max_age_s: 60
+auto_stop_loss: false
+league_allowlist: []
+
+# Limits (hard upper bounds in code; config can lower, never raise past them)
+limits:
+  max_trade_usd: 2.0
+  daily_loss_usd: 5.0
+  max_open_positions: 8
+
+llm:
+  provider: "openai"   # set per provider; no hardcoded model names in code
+  model: null
+  daily_budget_usd: 5.0
+
+control_api:
+  bind: "${CONTROL_API_BIND}"
+
+telegram:
+  allowed_user_id: "${TELEGRAM_ALLOWED_USER_ID}"

@@ -1,0 +1,27 @@
+# PRED Agent — gitignore
+.env
+.env.*
+*.db
+*.sqlite
+*.sqlite3
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+coverage/
+htmlcov/
+*.log
+logs/
+*.swp
+*.swo
+.DS_Store
+.vscode/
+.idea/
+backend/build/
+backend/dist/
+backend/*.egg-info/
