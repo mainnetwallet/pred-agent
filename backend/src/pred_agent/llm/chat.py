@@ -7,7 +7,7 @@ Grounded in ARCHITECTURE.md (LLM constraints):
 - No secrets, no API keys, no private keys ever in prompts or responses.
 - Tool output is wrapped in data-only blocks (prompt-injection guard).
 - Loop terminates when the model returns a final text reply (no more tool calls).
-- No token/timeout limits imposed here (project decision).
+- No token/timeout/iteration limits imposed here (project decision).
 - Tool calling is required; there is no JSON-intent fallback.
 """
 
@@ -155,7 +155,7 @@ class ChatLLM:
         messages = self._build_messages(history, user_message)
         cards: list[Card] = []
 
-        for _iteration in range(12):          # max 12 tool-call iterations
+        while True:   # no iteration cap: keeps calling tools until the model gives a final reply
             body = self._build_body(messages)
             try:
                 response_data = await self._call(body)
@@ -209,8 +209,6 @@ class ChatLLM:
                     "name": fn_name,
                     "content": safe_result,
                 })
-
-        return ChatResponse(reply="কিছু একটা সমস্যা হয়েছে। আবার চেষ্টা করুন।", cards=cards)
 
     # ── helpers ───────────────────────────────────────────────
 

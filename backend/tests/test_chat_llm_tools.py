@@ -145,3 +145,18 @@ def test_no_default_httpx_timeout(monkeypatch: Any) -> None:
 def test_empty_final_reply_gets_fallback_text() -> None:
     out = _run(_llm(lambda r: _resp(None), []))
     assert out.reply.strip() != ""
+
+
+def test_tool_loop_has_no_iteration_cap() -> None:
+    calls: list[dict[str, Any]] = []
+    n = {"i": 0}
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        n["i"] += 1
+        if n["i"] <= 30:
+            return _resp(tool_calls=[_tc("echo", {"value": str(n["i"])}, f"c{n['i']}")],
+                         finish="tool_calls")
+        return _resp("all done")
+
+    out = _run(_llm(handler, [_echo_tool(calls)]))
+    assert len(calls) == 30 and out.reply == "all done"
