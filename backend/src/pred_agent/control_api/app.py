@@ -969,8 +969,8 @@ def create_app(*, background: bool = False) -> FastAPI:  # noqa: PLR0915
         if not isinstance(llm, OpenAICompatClient):
             return error_response("llm_not_configured", "set LLM_API_KEY and LLM_MODEL", 400)
         res = await llm.complete(LLMRequest(
-            system_prompt="Reply with JSON only.",
-            user_prompt='Return {"ok": true}.',
+            system_prompt="Answer by calling the provided function.",
+            user_prompt="Call the function with ok=true.",
             response_schema={"type": "object", "required": ["ok"], "properties": {"ok": {"type": "boolean"}}},
         ))
         if not res.valid:

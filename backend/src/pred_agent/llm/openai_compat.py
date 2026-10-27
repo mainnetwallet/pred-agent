@@ -4,7 +4,12 @@ Works with any provider that speaks ``POST {base_url}/chat/completions``
 (OpenAI, OpenRouter, DeepSeek, Groq, Together, local vLLM/Ollama, ...).
 Configured only from env: ``LLM_API_KEY``, ``LLM_MODEL``, ``LLM_BASE_URL``.
 
-Fail closed: any HTTP error, bad JSON, or schema mismatch returns
+Structured output is obtained through tool calling only: the request schema is
+exposed as a single function (``respond``) and the model is forced to call it.
+There is no JSON-mode / free-text JSON fallback. A provider or model that does
+not support tool calling yields ``valid=False``.
+
+Fail closed: any HTTP error, missing tool call, or schema mismatch returns
 ``valid=False`` and never raises, so callers apply adjustment 0.
 """
 
@@ -32,6 +37,9 @@ _TYPES: dict[str, tuple[type, ...]] = {
 }
 
 
+_TOOL_NAME = "respond"
+
+
 def _normalize_base(url: str) -> str:
     url = url.strip().rstrip("/")
     if url.endswith("/chat/completions"):
@@ -55,21 +63,6 @@ def _validate(data: Any, schema: dict[str, Any]) -> bool:
         )):
             return False
     return True
-
-
-def _extract_json(text: str) -> Any:
-    text = text.strip()
-    if text.startswith("```"):
-        text = text.strip("`")
-        if text.lower().startswith("json"):
-            text = text[4:]
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError:
-        start, end = text.find("{"), text.rfind("}")
-        if start != -1 and end > start:
-            return json.loads(text[start : end + 1])
-        raise
 
 
 def _provider_error(resp: httpx.Response) -> str:
@@ -113,13 +106,21 @@ class OpenAICompatClient(LLMClient):
                 {"role": "user", "content": request.user_prompt},
             ],
             "temperature": request.temperature,
-            "response_format": {"type": "json_object"},
+            "tools": [{
+                "type": "function",
+                "function": {
+                    "name": _TOOL_NAME,
+                    "description": "Return the structured answer by calling this function.",
+                    "parameters": request.response_schema,
+                },
+            }],
+            "tool_choice": {"type": "function", "function": {"name": _TOOL_NAME}},
         }
         try:
             async with httpx.AsyncClient(timeout=self._timeout, transport=self._transport) as c:
                 resp = await self._post(c, body)
                 # Some providers reject optional params: drop them one at a time and retry.
-                for param in ("response_format", "temperature"):
+                for param in ("temperature",):
                     if resp.status_code in (400, 422) and param in resp.text and param in body:
                         body.pop(param)
                         resp = await self._post(c, body)
@@ -129,25 +130,25 @@ class OpenAICompatClient(LLMClient):
                 return LLMResponse(content="", valid=False,
                                    error=f"HTTP {resp.status_code}: {detail}")
             choice = resp.json()["choices"][0]
-            msg = choice["message"]
-            content = msg.get("content") or ""
-            if not content.strip():
-                # Reasoning models can spend the whole budget thinking and return no content.
-                content = msg.get("reasoning_content") or ""
-            if not content.strip():
+            tool_calls = choice["message"].get("tool_calls") or []
+            call = next(
+                (tc for tc in tool_calls if tc.get("function", {}).get("name") == _TOOL_NAME),
+                None,
+            )
+            if call is None:
                 reason = choice.get("finish_reason")
-                hint = " (provider cut the reply off)" if reason == "length" else ""
-                log.warning("llm empty content, finish_reason=%s", reason)
-                return LLMResponse(content="", valid=False,
-                                   error=f"empty reply, finish_reason={reason}{hint}")
+                log.warning("llm returned no tool call, finish_reason=%s", reason)
+                return LLMResponse(content=choice["message"].get("content") or "", valid=False,
+                                   error=f"model did not call the tool (tool calling unsupported?), finish_reason={reason}")
+            content = call["function"].get("arguments") or ""
         except (httpx.HTTPError, KeyError, IndexError, ValueError, TypeError) as exc:
             # Log the exception type only: never the request (contains no secrets, but be safe).
             log.warning("llm call failed: %s", type(exc).__name__)
             return LLMResponse(content="", valid=False, error=f"{type(exc).__name__} calling {self.base_url}")
         try:
-            parsed = _extract_json(content)
+            parsed = json.loads(content)
         except json.JSONDecodeError:
-            return LLMResponse(content=content, valid=False, error="reply was not valid JSON")
+            return LLMResponse(content=content, valid=False, error="tool arguments were not valid JSON")
         if not _validate(parsed, request.response_schema):
             return LLMResponse(content=content, valid=False, error="reply did not match schema")
         return LLMResponse(content=content, parsed=parsed, valid=True)

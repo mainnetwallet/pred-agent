@@ -584,31 +584,26 @@ def test_chat_rate_limit_after_multiple_failures(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# Tool-calling fallback: JSON mode
+# LLM client: tool calling only (no JSON-mode fallback)
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
-async def test_tool_calling_fallback_json_mode():
-    """When structured output is unsupported, LLM client retries without response_format."""
+async def test_llm_client_uses_tool_calling_only():
+    """Structured output comes from a forced tool call; response_format is never sent."""
+    import json
+
     import httpx
 
     from pred_agent.llm import LLMRequest, OpenAICompatClient
 
     SCHEMA = {"type": "object", "required": ["adj"], "properties": {"adj": {"type": "number"}}}
     req = LLMRequest(system_prompt="s", user_prompt="u", response_schema=SCHEMA)
-    calls: list[bool] = []
+    bodies: list[dict] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
-        body = request.content.decode()
-        import json
-        parsed = json.loads(body)
-        has_format = "response_format" in parsed
-        calls.append(has_format)
-        if has_format:
-            return httpx.Response(400, text="unsupported response_format")
-        return httpx.Response(
-            200, json={"choices": [{"message": {"content": '{"adj": 1.5}'}}]}
-        )
+        bodies.append(json.loads(request.content))
+        call = {"id": "c1", "type": "function", "function": {"name": "respond", "arguments": '{"adj": 1.5}'}}
+        return httpx.Response(200, json={"choices": [{"message": {"content": None, "tool_calls": [call]}}]})
 
     client = OpenAICompatClient(
         api_key="k", model="m", base_url="https://x.test/v1/",
@@ -617,5 +612,5 @@ async def test_tool_calling_fallback_json_mode():
     res = await client.complete(req)
     assert res.valid is True
     assert res.parsed == {"adj": 1.5}
-    # First call with response_format (failed), second without
-    assert calls == [True, False]
+    assert len(bodies) == 1
+    assert "response_format" not in bodies[0] and "tools" in bodies[0]

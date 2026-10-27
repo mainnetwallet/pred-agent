@@ -8,7 +8,7 @@ Grounded in ARCHITECTURE.md (LLM constraints):
 - Tool output is wrapped in data-only blocks (prompt-injection guard).
 - Loop terminates when the model returns a final text reply (no more tool calls).
 - No token/timeout limits imposed here (project decision).
-- Fallback to JSON intent mode when provider rejects tool-calling.
+- Tool calling is required; there is no JSON-intent fallback.
 """
 
 from __future__ import annotations
@@ -109,10 +109,7 @@ class ChatResponse:
 # ─────────────────────────────────────────────────────────────
 
 class ChatLLM:
-    """Multi-turn chat with OpenAI-compatible tool calling.
-
-    Falls back to JSON intent mode if the provider rejects tools.
-    """
+    """Multi-turn chat with OpenAI-compatible tool calling (required, no fallback)."""
 
     def __init__(
         self,
@@ -156,9 +153,8 @@ class ChatLLM:
         messages = self._build_messages(history, user_message)
         cards: list[Card] = []
 
-        use_tools = True
         for _iteration in range(12):          # max 12 tool-call iterations
-            body = self._build_body(messages, use_tools=use_tools)
+            body = self._build_body(messages)
             try:
                 response_data = await self._call(body)
             except Exception as exc:  # noqa: BLE001
@@ -219,13 +215,13 @@ class ChatLLM:
         msgs.append({"role": "user", "content": user_message})
         return msgs
 
-    def _build_body(self, messages: list[dict[str, Any]], *, use_tools: bool) -> dict[str, Any]:
+    def _build_body(self, messages: list[dict[str, Any]]) -> dict[str, Any]:
         body: dict[str, Any] = {
             "model": self.model,
             "messages": messages,
             "temperature": 0.2,
         }
-        if use_tools and self._tool_schemas:
+        if self._tool_schemas:
             body["tools"] = self._tool_schemas
             body["tool_choice"] = "auto"
         return body

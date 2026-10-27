@@ -23,8 +23,10 @@ def _client(handler, **kw):
     )
 
 
-def _reply(text):
-    return httpx.Response(200, json={"choices": [{"message": {"content": text}}]})
+def _reply(args):
+    """Provider reply carrying a tool call. ``args`` is the raw arguments string."""
+    call = {"id": "c1", "type": "function", "function": {"name": "respond", "arguments": args}}
+    return httpx.Response(200, json={"choices": [{"message": {"content": None, "tool_calls": [call]}}]})
 
 
 @pytest.mark.asyncio
@@ -41,19 +43,26 @@ async def test_valid_response_and_request_shape():
     assert res.valid and res.parsed == {"adj": 1.5}
     assert seen["url"] == "https://x.test/v1/chat/completions"
     assert seen["auth"] == "Bearer k" and seen["body"]["model"] == "m"
+    body = seen["body"]
+    assert "response_format" not in body
+    assert body["tools"][0]["function"]["name"] == "respond"
+    assert body["tools"][0]["function"]["parameters"] == SCHEMA
+    assert body["tool_choice"]["function"]["name"] == "respond"
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("text", ["not json", '{"adj": "high"}', "{}", "[1]"])
+@pytest.mark.parametrize("text", ["not json", '{"adj": "high"}', "{}", "[1]", ""])
 async def test_invalid_output_fails_closed(text):
     res = await _client(lambda r: _reply(text)).complete(REQ)
     assert res.valid is False and res.parsed is None
 
 
 @pytest.mark.asyncio
-async def test_fenced_json_accepted():
-    res = await _client(lambda r: _reply('```json\n{"adj": 2}\n```')).complete(REQ)
-    assert res.valid and res.parsed == {"adj": 2}
+async def test_plain_text_json_is_not_accepted():
+    """No JSON fallback: a text reply without a tool call is invalid."""
+    r = httpx.Response(200, json={"choices": [{"message": {"content": '{"adj": 2}'}}]})
+    res = await _client(lambda _r: r).complete(REQ)
+    assert res.valid is False and res.parsed is None and "tool" in res.error
 
 
 @pytest.mark.asyncio
@@ -63,18 +72,17 @@ async def test_http_error_fails_closed():
 
 
 @pytest.mark.asyncio
-async def test_retries_without_response_format():
+async def test_tools_unsupported_fails_closed_without_json_fallback():
     calls = []
 
     def handler(request):
         body = json.loads(request.content)
-        calls.append("response_format" in body)
-        if "response_format" in body:
-            return httpx.Response(400, text="unsupported response_format")
-        return _reply('{"adj": 0}')
+        calls.append(sorted(k for k in ("tools", "response_format") if k in body))
+        return httpx.Response(400, text="tools are not supported by this model")
 
     res = await _client(handler).complete(REQ)
-    assert res.valid and calls == [True, False]
+    assert res.valid is False
+    assert calls == [["tools"]]  # single attempt, never retried in JSON mode
 
 
 @pytest.mark.asyncio
@@ -127,17 +135,17 @@ async def test_error_reason_reported():
 
 
 @pytest.mark.asyncio
-async def test_empty_content_length_hint():
+async def test_no_tool_call_reports_finish_reason():
     r = httpx.Response(200, json={"choices": [{"message": {"content": ""}, "finish_reason": "length"}]})
     res = await _client(lambda _r: r).complete(REQ)
-    assert res.valid is False and "cut the reply off" in res.error
+    assert res.valid is False and "length" in res.error
 
 
 @pytest.mark.asyncio
-async def test_reasoning_content_fallback():
+async def test_reasoning_content_is_not_used_as_fallback():
     r = httpx.Response(200, json={"choices": [{"message": {"content": None, "reasoning_content": '{"adj": 3}'}}]})
     res = await _client(lambda _r: r).complete(REQ)
-    assert res.valid and res.parsed == {"adj": 3}
+    assert res.valid is False
 
 
 @pytest.mark.asyncio
