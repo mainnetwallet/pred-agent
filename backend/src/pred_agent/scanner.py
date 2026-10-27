@@ -47,12 +47,13 @@ class Scanner:
         self._max_rps = settings.discover_max_rps
         self._omit_cutoff = settings.omit_inactive_with_redeemed_on_before
         self._omit_days = settings.discover_omit_days
+        self._family: str | None = settings.discover_family or None
         self._scan_cutoff: str | None = self._omit_cutoff
         self._league_allowlist = settings.league_allowlist
         self._http = http_client or httpx.Client(timeout=httpx.Timeout(30.0))
         self._last_request_time: float | None = None
         # Diagnostics of the most recent scan (exposed via /status feed_diag).
-        self.last_scan: dict[str, Any] = {}
+        self.last_scan: dict[str, Any] = {"state": "starting"}
 
     # ------------------------------------------------------------------ #
     # Public API
@@ -72,7 +73,7 @@ class Scanner:
         stats |= {
             "state": "scanning", "pages": 0, "total": None, "seen": 0, "families": {}, "moneyline_statuses": {},
             "dropped_league": 0, "dropped_no_fixture": 0, "dropped_no_active_child": 0,
-            "kept": 0, "error": None, "cutoff": None,
+            "kept": 0, "error": None, "cutoff": None, "family": self._family,
         }
         stats["cutoff"] = self._scan_cutoff
         while True:
@@ -233,6 +234,8 @@ class Scanner:
             }
             if self._scan_cutoff:
                 params["omit_inactive_with_redeemed_on_before"] = self._scan_cutoff
+            if self._family:
+                params["family"] = self._family
             resp = self._http.get(f"{self._base_url}/api/v1/market-discovery/discover", params=params)
             if resp.status_code == 429:
                 retry_after = resp.headers.get("Retry-After")
@@ -240,6 +243,11 @@ class Scanner:
 
                 wait = float(retry_after) if retry_after else 2.0
                 _time.sleep(min(wait, 60.0))  # cap wait at 60s
+                continue
+            if resp.status_code == 400 and self._family:
+                # Server rejected the family filter: fall back to the unfiltered feed.
+                self.last_scan["family_filter_rejected"] = self._family
+                self._family = None
                 continue
             resp.raise_for_status()
             return _unwrap_page(resp.json())

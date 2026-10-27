@@ -315,7 +315,7 @@ async def run_background_tasks(
     monitor = monitor or RulesMonitor()
 
     async def scan_loop() -> None:
-        controller.set_feed_diag(getattr(scanner, "last_scan", None) or {"state": "starting"})
+        controller.set_feed_diag(scanner.last_scan)  # live reference, mutated during scans
         while not stop_ev.is_set():
             try:
                 await scan_once(

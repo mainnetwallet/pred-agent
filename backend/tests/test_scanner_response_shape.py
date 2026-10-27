@@ -90,3 +90,20 @@ def test_auto_cutoff_is_rfc3339_utc_and_explicit_overrides() -> None:
     assert sc._resolve_cutoff() is None
     sc._omit_cutoff = "2026-10-20T00:00:00Z"
     assert sc._resolve_cutoff() == "2026-10-20T00:00:00Z"
+
+
+def test_family_param_sent_and_falls_back_on_400() -> None:
+    seen: list[dict] = []
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        seen.append(dict(req.url.params))
+        if "family" in req.url.params:
+            return httpx.Response(400, json={"message": "bad"})
+        return httpx.Response(200, json={"data": {"parent_markets_list": [_entry("p1")], "total": 1}})
+
+    sc = _scanner(handler)
+    sc._max_rps = 1000
+    out = sc.scan_active_moneyline()
+    assert len(out) == 1
+    assert "family" in seen[0] and "family" not in seen[-1]
+    assert sc.last_scan["state"] == "done"
