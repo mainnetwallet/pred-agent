@@ -83,6 +83,7 @@ class AgentController:
         self._hard_max = dict(self.limits)
         # Feed freshness: set by scanner/book-feed tasks
         self._last_feed_update: datetime | None = None
+        self._feed_diag: dict[str, Any] | None = None  # last scan stats / error
         self._balance_usd: str | None = None   # None = unavailable (never "0.00" fake)
 
     # ── status ────────────────────────────────────────────────
@@ -99,6 +100,9 @@ class AgentController:
         age = (datetime.now(timezone.utc) - self._last_feed_update).total_seconds()
         return age <= self.settings.book_max_age_s * 3  # 3× book_max_age for scanner freshness
 
+    def set_feed_diag(self, diag: dict[str, Any] | None) -> None:
+        self._feed_diag = diag
+
     def set_balance(self, value: str | None) -> None:
         """Record available USDC (decimal string). None = unavailable (never a fake 0)."""
         self._balance_usd = value
@@ -113,6 +117,7 @@ class AgentController:
             "mode": self.mode,
             "auth_mode": "jwt" if self.settings.pred_api_key else "clob",
             "feeds_ok": self.feeds_ok,
+            "feed_diag": self._feed_diag,
             "balance": self._balance_usd,   # null = not available
             "exposure": str(exposure),
             "daily_pnl": str(self.positions.daily_pnl()),

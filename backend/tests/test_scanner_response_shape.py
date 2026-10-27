@@ -61,3 +61,20 @@ def test_scan_keeps_paging_past_empty_page():
     results = s.scan_active_moneyline()
     assert calls == ["0", "50"]
     assert [r.parent_market_id for r in results] == ["p2"]
+
+
+def test_last_scan_stats_recorded():
+    def handler(request: httpx.Request) -> httpx.Response:
+        spread = _entry("p2")
+        spread["parent_market_data"]["parent_market_family"] = "spread"
+        return httpx.Response(
+            200, json={"data": {"parent_markets_list": [_entry("p1"), spread], "total": 2}}
+        )
+
+    s = _scanner(handler)
+    s.scan_active_moneyline()
+    st = s.last_scan
+    assert st["seen"] == 2
+    assert st["kept"] == 1
+    assert st["families"] == {"moneyline": 1, "spread": 1}
+    assert st["error"] is None

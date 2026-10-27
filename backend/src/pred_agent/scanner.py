@@ -49,6 +49,8 @@ class Scanner:
         self._league_allowlist = settings.league_allowlist
         self._http = http_client or httpx.Client(timeout=httpx.Timeout(30.0))
         self._last_request_time: float | None = None
+        # Diagnostics of the most recent scan (exposed via /status feed_diag).
+        self.last_scan: dict[str, Any] = {}
 
     # ------------------------------------------------------------------ #
     # Public API
@@ -62,30 +64,49 @@ class Scanner:
         """
         results: list[DiscoveredParent] = []
         offset = 0
+        stats: dict[str, Any] = {
+            "pages": 0, "total": None, "seen": 0, "families": {}, "moneyline_statuses": {},
+            "dropped_league": 0, "dropped_no_fixture": 0, "dropped_no_active_child": 0,
+            "kept": 0, "error": None,
+        }
+        self.last_scan = stats
         while True:
-            page = self._fetch_page(offset)
+            try:
+                page = self._fetch_page(offset)
+            except Exception as exc:
+                stats["error"] = f"{type(exc).__name__}: {exc}"[:200]
+                raise
+            stats["pages"] += 1
             parents = page.get("parent_markets_list") or []
+            stats["seen"] += len(parents)
             # Docs: keep paging on empty pages; stop only when data.total is exhausted.
             for entry in parents:
                 pmd = entry.get("parent_market_data", {})
+                fam = str(pmd.get("parent_market_family"))
+                stats["families"][fam] = stats["families"].get(fam, 0) + 1
                 if pmd.get("parent_market_family") != "moneyline":
                     continue
+                st = str(pmd.get("status"))
+                stats["moneyline_statuses"][st] = stats["moneyline_statuses"].get(st, 0) + 1
                 if pmd.get("status") != "active":
                     continue
                 # League allowlist
                 if self._league_allowlist:
                     league = entry.get("league_data") or {}
                     if league.get("league_id") not in self._league_allowlist:
+                        stats["dropped_league"] += 1
                         continue
                 # Fixture filter: football only
                 fixture = entry.get("fixture")
                 if fixture is None:
+                    stats["dropped_no_fixture"] += 1
                     continue
                 # Active child markets only
                 active_children = [
                     m for m in (entry.get("markets") or []) if m.get("status") == "active"
                 ]
                 if not active_children:
+                    stats["dropped_no_active_child"] += 1
                     continue
                 results.append(
                     DiscoveredParent(
@@ -104,9 +125,11 @@ class Scanner:
                     )
                 )
             total = page.get("total", 0)
+            stats["total"] = total
             offset += self._discover_limit
             if offset >= total:
                 break
+        stats["kept"] = len(results)
         return results
 
     def upsert_to_db(self, session: Session, results: list[DiscoveredParent]) -> int:

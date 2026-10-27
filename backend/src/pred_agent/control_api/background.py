@@ -96,10 +96,18 @@ async def scan_once(
     bus: EventBus | None = None,
 ) -> list[DiscoveredParent]:
     """One discovery pass: scan → cache → DB → book tracking → event."""
-    results = await asyncio.to_thread(scanner.scan_active_moneyline)
+    try:
+        results = await asyncio.to_thread(scanner.scan_active_moneyline)
+    except Exception:
+        controller.set_feed_diag(dict(getattr(scanner, "last_scan", {}) or {"error": "scan failed"}))
+        raise
+    controller.set_feed_diag(dict(getattr(scanner, "last_scan", {}) or {}))
     if not results:
         # Fail closed: an empty scan does not count as a healthy feed.
-        log.warning("scan_once found 0 active moneyline fixtures; feeds not marked fresh")
+        log.warning(
+            "scan_once found 0 active moneyline fixtures; feeds not marked fresh; stats=%s",
+            getattr(scanner, "last_scan", {}),
+        )
         return results
 
     fixture_cache.update(results)
