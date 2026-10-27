@@ -14,6 +14,7 @@ import {
   View,
 } from "react-native";
 import { api } from "../services/api";
+import { useNavigation } from "@react-navigation/native";
 import { Rule, RuleStatus } from "../types/api";
 
 const STATUS_COLORS: Record<string, string> = {
@@ -68,6 +69,7 @@ export default function RulesScreen() {
   const [rules, setRules] = useState<Rule[]>([]);
   const [loading, setLoading] = useState(false);
   const [filter, setFilter] = useState<RuleStatus | undefined>(undefined);
+  const navigation = useNavigation<any>();
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -124,6 +126,15 @@ export default function RulesScreen() {
 
   return (
     <View style={styles.container}>
+      {/* Header */}
+      <View style={styles.header}>
+        <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
+          <Text style={styles.backText}>← Back</Text>
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Exit Rules</Text>
+        <View style={styles.backBtn} />
+      </View>
+
       {/* Filter chips */}
       <View style={styles.filters}>
         {FILTERS.map((f) => (
@@ -169,6 +180,18 @@ export default function RulesScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#0f1115" },
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: "#272b35",
+  },
+  backBtn: { paddingHorizontal: 4, paddingVertical: 4, minWidth: 56 },
+  backText: { color: "#4c8dff", fontSize: 14, fontWeight: "600" },
+  headerTitle: { color: "#e8eaf0", fontSize: 16, fontWeight: "700" },
   filters: { flexDirection: "row", padding: 12, gap: 8, flexWrap: "wrap" },
   filterChip: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999, borderWidth: 1, borderColor: "#272b35", backgroundColor: "#181b22" },
   filterChipActive: { backgroundColor: "#4c8dff", borderColor: "#4c8dff" },

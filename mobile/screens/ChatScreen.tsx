@@ -20,6 +20,7 @@ import {
   View,
 } from "react-native";
 import { api } from "../services/api";
+import { useNavigation } from "@react-navigation/native";
 import { ChatCard } from "../types/api";
 
 // ── Types ─────────────────────────────────────────────────────
@@ -145,6 +146,7 @@ export default function ChatScreen() {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const scrollRef = useRef<ScrollView>(null);
+  const navigation = useNavigation<any>();
 
   // Welcome message
   useEffect(() => {
@@ -267,6 +269,15 @@ export default function ChatScreen() {
       behavior={Platform.OS === "ios" ? "padding" : undefined}
       keyboardVerticalOffset={Platform.OS === "ios" ? 88 : 0}
     >
+      {/* Header */}
+      <View style={styles.header}>
+        <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
+          <Text style={styles.backText}>← Back</Text>
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Chat</Text>
+        <View style={styles.backBtn} />
+      </View>
+
       {/* Messages list */}
       <ScrollView
         ref={scrollRef}
@@ -349,6 +360,18 @@ export default function ChatScreen() {
 // ── Styles ────────────────────────────────────────────────────
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#0f1115" },
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: "#272b35",
+  },
+  backBtn: { paddingHorizontal: 4, paddingVertical: 4, minWidth: 56 },
+  backText: { color: "#4c8dff", fontSize: 14, fontWeight: "600" },
+  headerTitle: { color: "#e8eaf0", fontSize: 16, fontWeight: "700" },
   messages: { flex: 1 },
   messagesContent: { padding: 12, gap: 10, paddingBottom: 8 },
   msgBubble: { borderRadius: 12, padding: 12, maxWidth: "85%" },

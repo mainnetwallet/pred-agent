@@ -62,6 +62,12 @@ export const HomeScreen: React.FC = () => {
       <StatusBanner mode={mode} paused={paused} />
       <View style={styles.content}>
         <View style={styles.navRow}>
+          <TouchableOpacity style={styles.navButton} onPress={() => navigation.navigate("Chat")}>
+            <Text style={styles.navText}>Chat</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.navButton} onPress={() => navigation.navigate("Rules")}>
+            <Text style={styles.navText}>Rules</Text>
+          </TouchableOpacity>
           <TouchableOpacity style={styles.navButton} onPress={() => navigation.navigate("Proposals")}>
             <Text style={styles.navText}>Proposals</Text>
           </TouchableOpacity>

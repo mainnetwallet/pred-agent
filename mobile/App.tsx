@@ -15,6 +15,8 @@ import { HomeScreen } from "./screens/HomeScreen";
 import { ProposalsScreen } from "./screens/ProposalsScreen";
 import { PanicScreen } from "./screens/PanicScreen";
 import { LimitsSettingsScreen } from "./screens/LimitsSettingsScreen";
+import ChatScreen from "./screens/ChatScreen";
+import RulesScreen from "./screens/RulesScreen";
 import { useAuthStore } from "./store/index";
 import { wsClient } from "./services/websocket";
 import { api } from "./services/api";
@@ -78,6 +80,8 @@ export default function App() {
         ) : (
           <>
             <Stack.Screen name="Home" component={HomeScreen} />
+            <Stack.Screen name="Chat" component={ChatScreen} />
+            <Stack.Screen name="Rules" component={RulesScreen} />
             <Stack.Screen name="Proposals" component={ProposalsScreen} />
             <Stack.Screen name="Panic" component={PanicScreen} />
             <Stack.Screen name="LimitsSettings" component={LimitsSettingsScreen} />
