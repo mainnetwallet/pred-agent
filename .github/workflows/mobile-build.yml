@@ -53,6 +53,8 @@ jobs:
 
   build-android:
     runs-on: ubuntu-24.04
+    permissions:
+      contents: write  # GitHub Release e APK upload korar jonno
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v6
@@ -82,8 +84,8 @@ jobs:
       # (Gradle 9 na: AGP 8.x / RN 0.76 er sathe compatible na.)
       - name: Update Gradle wrapper
         run: |
-          sed -i -E 's#gradle-[0-9.]+-(bin|all)\.zip#gradle-8.14.3-bin.zip#' mobile/android/gradle/wrapper/gradle-wrapper.properties
-          grep distributionUrl mobile/android/gradle/wrapper/gradle-wrapper.properties
+          sed -i -E 's#gradle-[0-9.]+-(bin|all)\.zip#gradle-8.14.3-bin.zip#' android/gradle/wrapper/gradle-wrapper.properties
+          grep distributionUrl android/gradle/wrapper/gradle-wrapper.properties
 
       # JS-only change hole native compile skip hoy (Gradle up-to-date), build ~1-2 min.
       # Key: lockfile + app.json + native config; ei file gulo bodlale full native rebuild hobe.
@@ -144,3 +146,18 @@ jobs:
           path: mobile/android/app/build/outputs/apk/release/*.apk
           if-no-files-found: error
           retention-days: 14
+
+      # Releases page e APK publish (PR e na: PR token e write permission thake na).
+      - name: Publish APK to GitHub Releases
+        if: github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          apk=$(ls android/app/build/outputs/apk/release/*.apk | head -1)
+          short=$(echo "$GITHUB_SHA" | cut -c1-7)
+          cp "$apk" "$RUNNER_TEMP/pred-agent-$short.apk"
+          gh release create "build-${{ github.run_number }}" "$RUNNER_TEMP/pred-agent-$short.apk" \
+            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --title "PRED Agent APK #${{ github.run_number }} ($short)" \
+            --notes "Auto-built from $short (run #${{ github.run_number }}). Install the .apk on Android (allow unknown sources)."
