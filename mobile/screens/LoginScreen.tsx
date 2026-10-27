@@ -40,6 +40,10 @@ export const LoginScreen: React.FC = () => {
       wsClient.setUrl(base);
       const resp = await api.login(username.trim(), password);
       if (resp.ok && resp.data?.token) {
+        // Set the token on the clients first: the Home screen fires its requests as soon as it
+        // mounts, before App's effect has synced the token.
+        api.setToken(resp.data.token);
+        wsClient.setToken(resp.data.token);
         setServerUrl(base);
         setToken(resp.data.token);
         setPassword("");

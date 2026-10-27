@@ -43,9 +43,12 @@ class ApiClient {
     path: string,
     opts: RequestInit = {}
   ): Promise<ApiEnvelope<T>> {
+    // Remember which token this request was sent with: a 401 only means "session expired"
+    // if we actually sent the current token (not if it was set while the request was in flight).
+    const sentToken = this.token;
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
-      ...(this.token ? { Authorization: `Bearer ${this.token}` } : {}),
+      ...(sentToken ? { Authorization: `Bearer ${sentToken}` } : {}),
       ...(opts.headers as Record<string, string> || {}),
     };
 
@@ -61,7 +64,7 @@ class ApiClient {
       body = {};
     }
 
-    if (resp.status === 401 && this.token && this.unauthorizedHandler) {
+    if (resp.status === 401 && sentToken && sentToken === this.token && this.unauthorizedHandler) {
       this.unauthorizedHandler();
     }
 
