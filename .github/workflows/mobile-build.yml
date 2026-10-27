@@ -83,9 +83,12 @@ jobs:
         working-directory: mobile/android
         run: |
           set +e
-          ./gradlew assembleRelease --no-daemon --stacktrace > "$RUNNER_TEMP/gradle.log" 2>&1
-          code=$?
-          tail -n 120 "$RUNNER_TEMP/gradle.log"
+          # Live output dekhar jonno tee; ekta ABI (arm64-v8a) e build kora hocche, native compile druto hoy.
+          # 32-bit/emulator er jonno: -PreactNativeArchitectures=arm64-v8a,armeabi-v7a,x86_64
+          ./gradlew assembleRelease --no-daemon --stacktrace \
+            -PreactNativeArchitectures=arm64-v8a \
+            -Dorg.gradle.jvmargs=-Xmx4g 2>&1 | tee "$RUNNER_TEMP/gradle.log"
+          code=${PIPESTATUS[0]}
           if [ "$code" -ne 0 ]; then
             # Error ta annotation hishebe dekhano hocche (log na khuleo dekha jay)
             msg=$(grep -B2 -A30 -m1 -E "What went wrong|error:|FAILURE" "$RUNNER_TEMP/gradle.log" | head -50 | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
