@@ -71,4 +71,5 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
     CMD python -c "import os,urllib.request; urllib.request.urlopen('http://127.0.0.1:%s/health' % os.environ.get('PORT','8000'), timeout=5)" || exit 1
 
-CMD ["python", "-m", "pred_agent.main"]
+# Apply schema migrations before starting (DATABASE_URL comes from Render).
+CMD ["sh", "-c", "alembic upgrade head && exec python -m pred_agent.main"]

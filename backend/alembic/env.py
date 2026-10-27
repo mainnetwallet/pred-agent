@@ -17,9 +17,12 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# Override sqlalchemy.url from env if present
-database_url = os.getenv("PRED_DATABASE_URL")
+# Override sqlalchemy.url from env if present.
+# Render injects DATABASE_URL (postgres://); SQLAlchemy needs postgresql://.
+database_url = os.getenv("DATABASE_URL") or os.getenv("PRED_DATABASE_URL")
 if database_url:
+    if database_url.startswith("postgres://"):
+        database_url = "postgresql" + database_url[len("postgres"):]
     config.set_main_option("sqlalchemy.url", database_url)
 
 target_metadata = None
