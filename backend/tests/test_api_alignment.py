@@ -1,3 +1,4 @@
+# ruff: noqa: S105, S106  (dummy test tokens)
 """Docs alignment: CLOB order prefix, JWT refresh envelope, balance fetch."""
 
 from __future__ import annotations
