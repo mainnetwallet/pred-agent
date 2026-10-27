@@ -102,6 +102,8 @@ jobs:
             mobile/node_modules/@*/*/android/build
             mobile/node_modules/@*/*/android/.cxx
           key: android-native-${{ runner.os }}-${{ hashFiles('mobile/package-lock.json', 'mobile/app.json', '.github/workflows/mobile-build.yml') }}
+          restore-keys: |
+            android-native-${{ runner.os }}-
 
       # Release APK te lint-vital cholte dorkar nai (CI te ci.yml/jest/tsc ache) — ~20-40s save.
       - name: Gradle init script (skip lint-vital)
@@ -123,6 +125,7 @@ jobs:
           ./gradlew assembleRelease --no-daemon --stacktrace \
             --parallel --build-cache -I "$RUNNER_TEMP/skip-lint.init.gradle" \
             -PreactNativeArchitectures=arm64-v8a \
+            -Pandroid.enablePngCrunchInReleaseBuilds=false \
             -Dorg.gradle.jvmargs=-Xmx4g 2>&1 | tee "$RUNNER_TEMP/gradle.log"
           code=${PIPESTATUS[0]}
           if [ "$code" -ne 0 ]; then
