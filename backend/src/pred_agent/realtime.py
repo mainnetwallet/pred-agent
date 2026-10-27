@@ -42,6 +42,7 @@ class BookFeed:
         self._last_seq: dict[str, int] = {}
         self._poll_interval = settings.scan_interval_seconds
         self._tracked_markets: set[str] = set()
+        self._parents: dict[str, str] = {}
         self._running = False
 
     # ------------------------------------------------------------------ #
@@ -64,11 +65,17 @@ class BookFeed:
             return True
         return age > max_age_s
 
-    def track_market(self, market_id: str) -> None:
+    def track_market(self, market_id: str, parent_market_id: str | None = None) -> None:
         self._tracked_markets.add(market_id)
+        if parent_market_id:
+            self._parents[market_id] = parent_market_id
 
     def untrack_market(self, market_id: str) -> None:
         self._tracked_markets.discard(market_id)
+        self._parents.pop(market_id, None)
+
+    def parent_of(self, market_id: str) -> str | None:
+        return self._parents.get(market_id)
 
     # ------------------------------------------------------------------ #
     # REST book fetch (used by both modes)
@@ -174,11 +181,13 @@ class BookFeed:
         """Poll REST books for tracked markets (CLOB mode)."""
         while self._running:
             for market_id in list(self._tracked_markets):
-                # We need parent_market_id — look it up from cache or skip
-                entry = self._cache.get(market_id)
-                if entry is None:
+                parent_id = self._parents.get(market_id)
+                if not parent_id:
                     continue
-                # parent_id is tracked alongside cache entry in production
+                try:
+                    await self.fetch_book_rest(parent_id, market_id)
+                except Exception:
+                    logger.debug("poll fetch failed for %s", market_id, exc_info=True)
             await asyncio.sleep(self._poll_interval)
 
     # ------------------------------------------------------------------ #

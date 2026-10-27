@@ -207,3 +207,16 @@ async def stop_bot(app: BotApp | None) -> None:
         await app.shutdown()
     except Exception:
         log.exception("telegram bot shutdown error")
+
+
+async def send_alert(app: BotApp | None, settings: Settings, text: str) -> None:
+    """Send an operator alert via Telegram. Never raises."""
+    if app is None or app.bot is None:
+        return
+    try:
+        chat_id = int(settings.telegram_allowed_user_id or 0)
+        if not chat_id:
+            return
+        await app.bot.send_message(chat_id=chat_id, text=text)
+    except Exception:
+        log.exception("telegram alert failed")

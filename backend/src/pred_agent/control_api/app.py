@@ -268,7 +268,7 @@ class FixtureCache:
 # App factory
 # ─────────────────────────────────────────────────────────────
 
-def create_app() -> FastAPI:  # noqa: PLR0915
+def create_app(*, background: bool = False) -> FastAPI:  # noqa: PLR0915
     settings = load_settings()
     bus = EventBus()
     auth = DeviceAuth()
@@ -294,7 +294,7 @@ def create_app() -> FastAPI:  # noqa: PLR0915
     app.state.ws_manager = ws_manager
     app.state.fixture_cache = fixture_cache
     app.state.session_factory = session_factory
-    app.state.book_feed = None  # set when background tasks start (BookFeed)
+    app.state.book_feed = None  # set below when background tasks are enabled
 
     # ── event bus → WS broadcast task ────────────────────────
 
@@ -315,17 +315,46 @@ def create_app() -> FastAPI:  # noqa: PLR0915
 
     # ── lifespan ──────────────────────────────────────────────
 
+    if background:
+        from pred_agent.control_api.background import build_book_feed
+
+        app.state.book_feed = build_book_feed(settings)
+
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> Any:
-        from pred_agent.telegram.bot import start_bot, stop_bot
+        from pred_agent.telegram.bot import send_alert, start_bot, stop_bot
 
         tg_app = await start_bot(settings, controller)
         app.state.telegram = tg_app
         bus_task = asyncio.create_task(_bus_to_ws())
+
+        async def _alert(text: str) -> None:
+            await send_alert(tg_app, settings, text)
+
+        bg_task: asyncio.Task[Any] | None = None
+        stop_ev: asyncio.Event | None = None
+        if background:
+            from pred_agent.control_api.background import run_background_tasks
+            from pred_agent.scanner import Scanner
+
+            stop_ev = asyncio.Event()
+            bg_task = asyncio.create_task(run_background_tasks(
+                scanner=Scanner(),
+                fixture_cache=fixture_cache,
+                session_factory=session_factory,
+                book_feed=app.state.book_feed,
+                controller=controller,
+                bus=bus,
+                alert_fn=_alert,
+                stop=stop_ev,
+            ))
         try:
             yield
         finally:
             bus_task.cancel()
+            if bg_task is not None and stop_ev is not None:
+                stop_ev.set()
+                bg_task.cancel()
             await stop_bot(tg_app)
 
     app.router.lifespan_context = lifespan

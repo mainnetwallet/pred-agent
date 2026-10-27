@@ -24,8 +24,8 @@ def main() -> int:
     print(f"Host: {settings.host}")
     print(f"Chain ID: {settings.chain_id}")
 
-    # TODO: wire scanner, realtime, execution, telegram here.
-    # For now the process serves the Control API (health, pairing, ws).
+    # One asyncio process: scanner loop + rules monitor run inside the app
+    # lifespan (see control_api/background.py); uvicorn serves the Control API.
     import uvicorn
 
     from pred_agent.control_api.app import create_app
@@ -39,7 +39,7 @@ def main() -> int:
         bind = settings.control_api_bind or "127.0.0.1"
 
     print(f"Control API listening on {bind}:{port}")
-    uvicorn.run(create_app(), host=bind, port=port, log_level="info")
+    uvicorn.run(create_app(background=True), host=bind, port=port, log_level="info")
     return 0
 
 
