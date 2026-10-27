@@ -33,6 +33,7 @@ from pred_agent.control_api.session import LoginManager
 from pred_agent.events import Event, EventBus
 from pred_agent.llm import LLMRequest, OpenAICompatClient, build_llm_client
 from pred_agent.llm.chat import ChatMessage, build_chat_llm
+from pred_agent.realtime import BookFeed
 from pred_agent.scanner import DiscoveredParent
 from pred_agent.store.repository import ChatRepo
 from pred_agent.store.session import create_session_manager
@@ -351,14 +352,66 @@ def create_app() -> FastAPI:  # noqa: PLR0915
             return fwd.split(",")[-1].strip()
         return request.client.host if request.client else "?"
 
-    # ── build chat LLM with read-only tools ───────────────────
+    # ── build chat LLM with read-only + PENDING-only write tools ──
 
     def _make_chat_llm():  # type: ignore[no-untyped-def]
-        from pred_agent.llm.chat import Tool
+        from pred_agent.llm.chat import Card, Tool
+
+        def _book() -> "BookFeed | None":
+            return getattr(app.state, "book_feed", None)
+
+        def _find_market(market_id: str) -> dict[str, Any] | None:
+            for fx in fixture_cache.list():
+                for m in fx.get("markets", []):
+                    if m.get("market_id") == market_id:
+                        return {"fixture": fx, "market": m}
+            return None
+
+        def _price_for(side: str, market_id: str) -> Decimal | None:
+            bf = _book()
+            if bf is None:
+                return None
+            snap = bf.get_book(market_id)
+            if snap is None:
+                return None
+            if side == "long" and snap.asks:
+                return snap.asks[0].price_cents
+            if side == "short" and snap.bids:
+                return snap.bids[0].price_cents
+            return snap.mid_price_cents
+
+        # ── read-only tools ─────────────────────────────────
 
         async def _list_fixtures(state: str = "all") -> dict[str, Any]:
             items = fixture_cache.list(state if state != "all" else None)
             return {"fixtures": items, "count": len(items), "state_filter": state}
+
+        async def _get_fixture(fixture_id: str) -> dict[str, Any]:
+            match = next(
+                (
+                    f for f in fixture_cache.list()
+                    if f.get("id") == fixture_id or f.get("parent_market_id") == fixture_id
+                ),
+                None,
+            )
+            if match is None:
+                return {"error": f"fixture {fixture_id} not found"}
+            return {"fixture": match}
+
+        async def _get_book(market_id: str) -> dict[str, Any]:
+            bf = _book()
+            if bf is None:
+                return {"error": "book feed is not running"}
+            snap = bf.get_book(market_id)
+            if snap is None:
+                return {"error": f"no book data for market {market_id}"}
+            return {
+                "market_id": market_id,
+                "best_bid_cents": str(snap.bids[0].price_cents) if snap.bids else None,
+                "best_ask_cents": str(snap.asks[0].price_cents) if snap.asks else None,
+                "mid_price_cents": str(snap.mid_price_cents) if snap.mid_price_cents is not None else None,
+                "spread_cents": str(snap.spread_cents) if snap.spread_cents is not None else None,
+            }
 
         async def _get_status() -> dict[str, Any]:
             return controller.status()
@@ -375,6 +428,100 @@ def create_app() -> FastAPI:  # noqa: PLR0915
 
         async def _get_limits() -> dict[str, Any]:
             return {"limits": controller.limits_list()}
+
+        # ── write-intent tools (create PENDING objects or confirmation cards ONLY) ──
+
+        async def _propose_trade(market_id: str, side: str, amount_usd: str) -> tuple[dict[str, Any], list[Card]]:
+            found = _find_market(market_id)
+            if found is None:
+                return {"error": f"market {market_id} is not in the current fixture feed"}, []
+            fixture = found["fixture"]
+            side_n = str(side).lower()
+            if side_n in ("buy", "yes", "long"):
+                side_n = "long"
+            elif side_n in ("sell", "no", "short"):
+                side_n = "short"
+            else:
+                return {"error": "side must be long (buy) or short (sell)"}, []
+            try:
+                amount = Decimal(str(amount_usd))
+            except InvalidOperation:
+                return {"error": "amount_usd must be a decimal number"}, []
+            price = _price_for(side_n, market_id)
+            if price is None or price <= 0:
+                return {"error": "no live price for this market — cannot price a proposal (fail closed)"}, []
+            prop, err = controller.propose_trade_from_chat(
+                market_id=market_id,
+                parent_market_id=fixture.get("parent_market_id", ""),
+                fixture_id=fixture.get("id", ""),
+                side=side_n,
+                amount_usd=amount,
+                price_cents=price,
+            )
+            if prop is None:
+                return {"error": err or "proposal rejected"}, []
+            return {"proposal_id": prop.id, "status": prop.status.value}, [Card("proposal", to_jsonable(prop))]
+
+        async def _create_rule(
+            market_id: str, kind: str, trigger_type: str, trigger_value: str,
+            size: str = "all",
+        ) -> tuple[dict[str, Any], list[Card]]:
+            kind_n = str(kind).lower()
+            if kind_n not in ("take_profit", "stop_loss"):
+                return {"error": "kind must be take_profit or stop_loss"}, []
+            tt = str(trigger_type).lower()
+            if tt not in ("profit_usd", "loss_usd", "price_cents", "profit_pct"):
+                return {"error": "trigger_type must be profit_usd, loss_usd, price_cents or profit_pct"}, []
+            try:
+                value = Decimal(str(trigger_value))
+            except InvalidOperation:
+                return {"error": "trigger_value must be a decimal number"}, []
+            rule, err = controller.create_rule_from_chat(
+                market_id=market_id, kind=kind_n, trigger_type=tt,
+                trigger_value=value, size=size,
+            )
+            if rule is None:
+                return {"error": err or "rule rejected"}, []
+            return {"rule_id": rule.id, "status": rule.status}, [Card("rule", rule.to_dict())]
+
+        async def _close_position(market_id: str) -> tuple[dict[str, Any], list[Card]]:
+            prop, err = controller.close_position_proposal(market_id, via="chat")
+            if prop is None:
+                return {"error": err or "cannot close position"}, []
+            return {"proposal_id": prop.id, "status": prop.status.value}, [Card("proposal", to_jsonable(prop))]
+
+        async def _cancel_order(order_id: str) -> tuple[dict[str, Any], list[Card]]:
+            order = next((o for o in controller.executor.list_orders() if o.id == order_id), None)
+            if order is None:
+                return {"error": f"order {order_id} not found"}, []
+            card = Card("action", {
+                "action": "cancel_order",
+                "order_id": order_id,
+                "label": f"Cancel order {order_id} ({order.side} @ {order.price_cents}c)?",
+            })
+            return {"card_created": "cancel_order"}, [card]
+
+        async def _cancel_rule(rule_id: str) -> tuple[dict[str, Any], list[Card]]:
+            rule = controller.rules.get(rule_id)
+            if rule is None:
+                return {"error": f"rule {rule_id} not found"}, []
+            card = Card("action", {
+                "action": "cancel_rule",
+                "rule_id": rule_id,
+                "label": f"Cancel rule {rule_id}?",
+            })
+            return {"card_created": "cancel_rule"}, [card]
+
+        async def _request_pause() -> tuple[dict[str, Any], list[Card]]:
+            card = Card("action", {"action": "pause", "label": "Pause the agent (block new entries)?"})
+            return {"card_created": "pause"}, [card]
+
+        async def _request_panic() -> tuple[dict[str, Any], list[Card]]:
+            card = Card("action", {
+                "action": "panic",
+                "label": "PANIC: pause + reject proposals + cancel orders and ALL rules?",
+            })
+            return {"card_created": "panic"}, [card]
 
         tools = [
             Tool(
@@ -397,6 +544,26 @@ def create_app() -> FastAPI:  # noqa: PLR0915
                     "required": [],
                 },
                 fn=_list_fixtures,
+            ),
+            Tool(
+                name="get_fixture",
+                description="Get one fixture's details by id or parent_market_id.",
+                parameters={
+                    "type": "object",
+                    "properties": {"fixture_id": {"type": "string"}},
+                    "required": ["fixture_id"],
+                },
+                fn=_get_fixture,
+            ),
+            Tool(
+                name="get_book",
+                description="Get the current order book (best bid/ask) for a market.",
+                parameters={
+                    "type": "object",
+                    "properties": {"market_id": {"type": "string"}},
+                    "required": ["market_id"],
+                },
+                fn=_get_book,
             ),
             Tool(
                 name="get_status",
@@ -428,7 +595,95 @@ def create_app() -> FastAPI:  # noqa: PLR0915
                 parameters={"type": "object", "properties": {}, "required": []},
                 fn=_get_limits,
             ),
+            Tool(
+                name="propose_trade",
+                description=(
+                    "Create a PENDING trade proposal card for the human to approve. "
+                    "NEVER executes a trade. side='long' (buy YES) or 'short' (sell/buy NO). "
+                    "Restate market, side and amount to the user before calling."
+                ),
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "market_id": {"type": "string"},
+                        "side": {"type": "string", "enum": ["long", "short"]},
+                        "amount_usd": {"type": "string", "description": "USD amount as a decimal string"},
+                    },
+                    "required": ["market_id", "side", "amount_usd"],
+                },
+                fn=_propose_trade,
+            ),
+            Tool(
+                name="create_rule",
+                description=(
+                    "Create a PENDING exit rule card for the human to confirm. NEVER executes. "
+                    "kind: take_profit or stop_loss. trigger_type: profit_usd, loss_usd, "
+                    "price_cents or profit_pct. Requires an existing open position on the market."
+                ),
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "market_id": {"type": "string"},
+                        "kind": {"type": "string", "enum": ["take_profit", "stop_loss"]},
+                        "trigger_type": {
+                            "type": "string",
+                            "enum": ["profit_usd", "loss_usd", "price_cents", "profit_pct"],
+                        },
+                        "trigger_value": {"type": "string", "description": "Decimal trigger value"},
+                        "size": {"type": "string", "description": "all (default)"},
+                    },
+                    "required": ["market_id", "kind", "trigger_type", "trigger_value"],
+                },
+                fn=_create_rule,
+            ),
+            Tool(
+                name="close_position",
+                description=(
+                    "Create a PENDING reduce-only exit proposal card for an open position. "
+                    "The human must approve it."
+                ),
+                parameters={
+                    "type": "object",
+                    "properties": {"market_id": {"type": "string"}},
+                    "required": ["market_id"],
+                },
+                fn=_close_position,
+            ),
+            Tool(
+                name="cancel_order",
+                description="Create a confirmation card to cancel an open order. Never cancels directly.",
+                parameters={
+                    "type": "object",
+                    "properties": {"order_id": {"type": "string"}},
+                    "required": ["order_id"],
+                },
+                fn=_cancel_order,
+            ),
+            Tool(
+                name="cancel_rule",
+                description="Create a confirmation card to cancel a rule. Never cancels directly.",
+                parameters={
+                    "type": "object",
+                    "properties": {"rule_id": {"type": "string"}},
+                    "required": ["rule_id"],
+                },
+                fn=_cancel_rule,
+            ),
+            Tool(
+                name="request_pause",
+                description="Create a confirmation card to pause the agent. Never pauses directly.",
+                parameters={"type": "object", "properties": {}, "required": []},
+                fn=_request_pause,
+            ),
+            Tool(
+                name="request_panic",
+                description="Create a confirmation card to trigger PANIC. Never triggers it directly.",
+                parameters={"type": "object", "properties": {}, "required": []},
+                fn=_request_panic,
+            ),
         ]
+        app.state.chat_tools = [t.name for t in tools]
+        app.state.chat_tool_fns = {t.name: t.fn for t in tools}
         return build_chat_llm(
             api_key=settings.llm_api_key,
             model=settings.llm_model,

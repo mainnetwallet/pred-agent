@@ -48,7 +48,20 @@ CRITICAL SAFETY RULES (never violate):
 You have access to read-only tools to fetch live data. Use them before answering questions about
 matches, positions, or prices. Do not answer from memory.
 
-For trade/rule creation: create a proposal/rule card with all parameters clearly stated.
+For trade/rule creation you have WRITE-INTENT tools. They never act on their own — each one only
+creates a PENDING object or a confirmation card that the HUMAN must explicitly confirm:
+- propose_trade: creates a PENDING trade proposal card (human approves/rejects). Validate market
+  and price first with get_fixture/get_book; if no book data exists, do NOT propose — say the feed
+  is unavailable.
+- create_rule: creates a PENDING exit rule card (human confirms/cancels). A position must exist.
+- close_position: creates a PENDING close-position proposal card.
+- cancel_order / cancel_rule / request_pause / request_panic: return an ACTION confirmation card
+  describing what will happen; the human must click Confirm to actually perform it.
+
+After any write-intent tool succeeds, clearly restate what was created and that it is PENDING
+awaiting the human's confirmation. If a tool reports an error or a fail-closed veto, explain it
+honestly and do NOT retry the same parameters.
+
 For status/position/order queries: call the relevant tool and present the data.
 """
 

@@ -6,13 +6,12 @@
  * card rendering (rule confirm/cancel with biometric X-Confirm gate).
  */
 
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
   Platform,
-  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -21,8 +20,7 @@ import {
   View,
 } from "react-native";
 import { api } from "../services/api";
-import { useAuthStore } from "../store/auth";
-import { ChatCard, ChatTurn } from "../types/api";
+import { ChatCard } from "../types/api";
 
 // ── Types ─────────────────────────────────────────────────────
 interface LocalMessage {
@@ -47,12 +45,14 @@ function CardView({
   onCancelRule,
   onApproveProposal,
   onRejectProposal,
+  onAction,
 }: {
   card: ChatCard;
   onConfirmRule: (id: string) => void;
   onCancelRule: (id: string) => void;
   onApproveProposal: (id: string) => void;
   onRejectProposal: (id: string) => void;
+  onAction: (data: Record<string, any>) => void;
 }) {
   if (card.type === "fixture_list") {
     const fixtures: any[] = (card.data as any).fixtures ?? [];
@@ -119,6 +119,21 @@ function CardView({
     );
   }
 
+  if (card.type === "action") {
+    const d = card.data as any;
+    return (
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>ACTION REQUIRED</Text>
+        <Text style={styles.cardBody}>{d.label ?? "Confirm this action?"}</Text>
+        <View style={styles.cardActions}>
+          <TouchableOpacity style={[styles.btn, styles.btnBad]} onPress={() => onAction(d)}>
+            <Text style={styles.btnText}>Confirm</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
+
   return null;
 }
 
@@ -130,7 +145,6 @@ export default function ChatScreen() {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const scrollRef = useRef<ScrollView>(null);
-  const token = useAuthStore((s) => s.token);
 
   // Welcome message
   useEffect(() => {
@@ -221,6 +235,32 @@ export default function ChatScreen() {
     Alert.alert(r.ok ? "Rejected" : "Error", r.ok ? "Proposal rejected." : (r.error?.message ?? "Failed"));
   }, []);
 
+  const handleAction = useCallback(async (d: Record<string, any>) => {
+    const action = d.action as string;
+    if (action === "pause") {
+      const r = await api.pause();
+      Alert.alert(r.ok ? "Paused" : "Error", r.ok ? "Agent paused." : (r.error?.message ?? "Failed"));
+    } else if (action === "panic") {
+      Alert.alert("PANIC", "Pause, reject proposals, cancel orders AND all rules?", [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "PANIC",
+          style: "destructive",
+          onPress: async () => {
+            const r = await api.panic();
+            Alert.alert(r.ok ? "Panic done" : "Error", r.ok ? "Agent paused, everything cancelled." : (r.error?.message ?? "Failed"));
+          },
+        },
+      ]);
+    } else if (action === "cancel_order") {
+      const r = await api.cancelOrder(d.order_id);
+      Alert.alert(r.ok ? "Cancelled" : "Error", r.ok ? "Order cancelled." : (r.error?.message ?? "Failed"));
+    } else if (action === "cancel_rule") {
+      const r = await api.cancelRule(d.rule_id);
+      Alert.alert(r.ok ? "Cancelled" : "Error", r.ok ? "Rule cancelled." : (r.error?.message ?? "Failed"));
+    }
+  }, []);
+
   return (
     <KeyboardAvoidingView
       style={styles.container}
@@ -250,6 +290,7 @@ export default function ChatScreen() {
                 onCancelRule={handleCancelRule}
                 onApproveProposal={handleApproveProposal}
                 onRejectProposal={handleRejectProposal}
+                onAction={handleAction}
               />
             ))}
           </View>

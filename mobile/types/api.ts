@@ -187,7 +187,7 @@ export interface Rule {
 // ── Chat (Phase 8) ──
 
 export interface ChatCard {
-  type: "fixture_list" | "fixture_detail" | "proposal" | "rule" | "rule_list" | "position_list" | "status";
+  type: "fixture_list" | "fixture_detail" | "proposal" | "rule" | "rule_list" | "position_list" | "status" | "action";
   data: Record<string, unknown>;
 }
 

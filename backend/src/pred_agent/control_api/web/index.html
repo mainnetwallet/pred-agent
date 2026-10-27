@@ -519,10 +519,34 @@ function renderCard(card) {
     }
     return wrap;
   }
+  if (card.type === "action") {
+    const d = card.data || {};
+    wrap.append(el("h4", { textContent: "Action Required" }));
+    wrap.append(el("div", { textContent: d.label || "Confirm this action?" }));
+    const actions = el("div", { className: "card-actions" });
+    const goBtn = el("button", { className: "bad", textContent: "Confirm" });
+    goBtn.onclick = async () => {
+      let r;
+      if (d.action === "pause") r = await api("/v1/pause", { method: "POST", body: "{}" });
+      else if (d.action === "panic") {
+        if (!confirm("PANIC: pause, reject proposals, cancel orders AND rules?")) return;
+        r = await api("/v1/panic", { method: "POST", body: "{}" });
+      } else if (d.action === "cancel_order") {
+        r = await api(`/v1/orders/${d.order_id}/cancel`, { method: "POST", body: "{}" });
+      } else if (d.action === "cancel_rule") {
+        r = await api(`/v1/rules/${d.rule_id}/cancel`, { method: "POST", body: "{}" });
+      } else return;
+      goBtn.disabled = true;
+      goBtn.textContent = r.ok ? "Done ✓" : "Failed";
+      refresh();
+      loadRules(null);
+    };
+    actions.append(goBtn);
+    wrap.append(actions);
+    return wrap;
+  }
   return null;
 }
-
-async function sendChatMessage(text) {
   if (!text.trim()) return;
   appendChatMsg("user", text);
   $("chat-input").value = "";
