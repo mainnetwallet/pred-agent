@@ -136,19 +136,32 @@ class JwtAuth:
             # Token already used or invalid — re-login
             return self.login()
         resp.raise_for_status()
-        data = resp.json()
-        data_data = data.get("data", {})
+        body = resp.json()
+        # Docs: {"success", "data": {"access_token", "user_id", "proxy_wallet_address",
+        # "is_enabled_trading", "data": {...}}} — access_token is nested under data.
+        inner = body.get("data") or {}
+        access_token = inner.get("access_token") or body.get("access_token")
+        if not access_token:
+            raise RuntimeError("refresh response has no access_token")
+        nested = inner.get("data") or {}
+        enabled = inner.get("is_enabled_trading", nested.get("is_enabled_trading"))
         # New refresh token comes only in Set-Cookie per spec; fall back to body
-        new_refresh = self._extract_refresh_cookie(resp) or data.get("refresh_token", "")
+        new_refresh = (
+            self._extract_refresh_cookie(resp)
+            or inner.get("refresh_token")
+            or body.get("refresh_token", "")
+        )
         tokens = JwtTokens(
-            access_token=data["access_token"],
+            access_token=access_token,
             refresh_token=new_refresh or refresh_token,
-            proxy_wallet_addr=data_data.get("proxy_wallet_address")
+            proxy_wallet_addr=inner.get("proxy_wallet_address")
             or self._tokens.proxy_wallet_addr,
-            wallet_address=data_data.get("wallet_address") or self._tokens.wallet_address,
-            user_id=data_data.get("user_id") or self._tokens.user_id,
-            is_enabled_trading=bool(data_data.get("is_enabled_trading", False)),
-            expires_at=self._decode_exp(data["access_token"]),
+            wallet_address=inner.get("wallet_address") or self._tokens.wallet_address,
+            user_id=inner.get("user_id") or nested.get("user_id") or self._tokens.user_id,
+            is_enabled_trading=(
+                self._tokens.is_enabled_trading if enabled is None else bool(enabled)
+            ),
+            expires_at=self._decode_exp(access_token),
         )
         # Persist new token before discarding old (atomic swap under lock)
         self._tokens = tokens

@@ -99,6 +99,10 @@ class AgentController:
         age = (datetime.now(timezone.utc) - self._last_feed_update).total_seconds()
         return age <= self.settings.book_max_age_s * 3  # 3× book_max_age for scanner freshness
 
+    def set_balance(self, value: str | None) -> None:
+        """Record available USDC (decimal string). None = unavailable (never a fake 0)."""
+        self._balance_usd = value
+
     def mark_feed_updated(self) -> None:
         self._last_feed_update = datetime.now(timezone.utc)
 

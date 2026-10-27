@@ -126,6 +126,23 @@ async def scan_once(
     return results
 
 
+async def refresh_balance_once(*, controller: AgentController, transport: Any) -> None:
+    """Fetch available USDC via the transport; unavailable stays None (never faked)."""
+    getter = getattr(transport, "get_balance", None)
+    if getter is None:
+        return
+    auth = getattr(transport, "auth", None)
+    # CLOB: recover existing L2 credentials (derive never creates an account/quota).
+    if auth is not None and hasattr(auth, "derive_credentials") and getattr(auth, "credentials", "n/a") is None:
+        await asyncio.to_thread(auth.sync_clock)
+        await asyncio.to_thread(auth.derive_credentials, 0)
+    body = await asyncio.to_thread(getter)
+    if body.get("success") is True and body.get("usdc_balance") is not None:
+        controller.set_balance(str(body["usdc_balance"]))
+    else:
+        controller.set_balance(None)
+
+
 # ─────────────────────────────────────────────────────────────
 # Rules monitor (fail closed)
 # ─────────────────────────────────────────────────────────────
@@ -320,7 +337,22 @@ async def run_background_tasks(
                 log.warning("rules monitor pass failed", exc_info=True)
             await asyncio.sleep(max(1, controller.settings.scan_interval_seconds))
 
+    async def balance_loop() -> None:
+        transport = getattr(book_feed, "transport", None)
+        while not stop_ev.is_set():
+            try:
+                await refresh_balance_once(controller=controller, transport=transport)
+            except Exception:
+                controller.set_balance(None)
+                log.debug("balance refresh failed", exc_info=True)
+            try:
+                await asyncio.wait_for(stop_ev.wait(), timeout=max(15, controller.settings.scan_interval_seconds))
+            except asyncio.TimeoutError:
+                pass
+
     tasks = [asyncio.create_task(scan_loop()), asyncio.create_task(monitor_loop())]
+    if book_feed is not None:
+        tasks.append(asyncio.create_task(balance_loop()))
     if book_feed is not None:
         await book_feed.start()
         tasks.append(asyncio.create_task(book_feed.poll_clob_books()))

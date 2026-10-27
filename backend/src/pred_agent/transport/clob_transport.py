@@ -19,6 +19,9 @@ from .protocol import PredTransport, PredTransportError, TransportCaps
 class ClobTransport(PredTransport):
     """PRED transport using CLOB L2 HMAC authentication."""
 
+    # CLOB trading routes live under /clob (docs: Builder / Aggregator CLOB).
+    order_prefix = "/clob"
+
     def __init__(self, auth: ClobAuth, base_url: str = "https://www.pred.app",
                  http_client: httpx.Client | None = None) -> None:
         self.auth = auth
@@ -97,6 +100,10 @@ class ClobTransport(PredTransport):
         _, result, _ = self._request("POST", "/clob/api/v1/user/safe-approval/execute",
                                      json={"signature": signature, "data": data})
         return result
+
+    def get_balance(self) -> dict[str, Any]:
+        """GET /clob/api/v1/portfolio/balance — top-level success/usdc_balance/position_balance."""
+        return self.get("/clob/api/v1/portfolio/balance")
 
     # ------------------------------------------------------------------ #
     # Internals

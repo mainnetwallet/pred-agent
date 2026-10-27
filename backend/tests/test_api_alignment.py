@@ -1,0 +1,89 @@
+"""Docs alignment: CLOB order prefix, JWT refresh envelope, balance fetch."""
+
+from __future__ import annotations
+
+import asyncio
+from types import SimpleNamespace
+from typing import Any
+
+import httpx
+
+from pred_agent.auth.jwt_auth import JwtAuth, JwtTokens
+from pred_agent.control_api.background import refresh_balance_once
+from pred_agent.execution.live_executor import LiveExecutor
+from pred_agent.transport.clob_transport import ClobTransport
+from pred_agent.transport.jwt_transport import JwtTransport
+
+
+def test_order_prefix_per_transport():
+    assert ClobTransport.order_prefix == "/clob"
+    assert JwtTransport.order_prefix == ""
+
+
+def test_live_executor_uses_transport_prefix():
+    ex = LiveExecutor.__new__(LiveExecutor)
+    ex.transport = SimpleNamespace(order_prefix="/clob")
+    assert ex._order_prefix() == "/clob"
+    ex.transport = SimpleNamespace()
+    assert ex._order_prefix() == ""
+
+
+def _jwt(handler) -> JwtAuth:
+    auth = JwtAuth(
+        api_key="k", private_key="0x" + "11" * 32, eoa_address="0xabc",
+        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+    auth._tokens = JwtTokens(
+        access_token="old", refresh_token="r1", proxy_wallet_addr="0xproxy",
+        wallet_address="0xabc", user_id="u1", is_enabled_trading=True,
+    )
+    return auth
+
+
+def test_refresh_reads_nested_data_envelope():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={"success": True, "data": {
+                "access_token": "new", "user_id": "u1",
+                "proxy_wallet_address": "0xproxy2", "is_enabled_trading": True,
+                "data": {"user_id": "u1"},
+            }},
+            headers={"Set-Cookie": "refresh_token=r2; Path=/; HttpOnly"},
+        )
+
+    tokens = _jwt(handler).refresh()
+    assert tokens.access_token == "new"
+    assert tokens.refresh_token == "r2"
+    assert tokens.proxy_wallet_addr == "0xproxy2"
+    assert tokens.is_enabled_trading is True
+
+
+class _Ctl:
+    def __init__(self) -> None:
+        self.balance: Any = "unset"
+
+    def set_balance(self, v: Any) -> None:
+        self.balance = v
+
+
+class _Tr:
+    def __init__(self, body: dict[str, Any]) -> None:
+        self._body = body
+
+    def get_balance(self) -> dict[str, Any]:
+        return self._body
+
+
+def test_balance_top_level_fields():
+    ctl = _Ctl()
+    asyncio.run(refresh_balance_once(
+        controller=ctl, transport=_Tr({"success": True, "usdc_balance": "10.5", "position_balance": "0"})))
+    assert ctl.balance == "10.5"
+
+
+def test_balance_failure_stays_unavailable():
+    ctl = _Ctl()
+    asyncio.run(refresh_balance_once(
+        controller=ctl, transport=_Tr({"success": False, "usdc_balance": "0", "error": "x"})))
+    assert ctl.balance is None

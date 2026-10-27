@@ -65,6 +65,10 @@ class LiveExecutor:
         self.signer_private_key = signer_private_key
         self.chain_id = chain_id
 
+    def _order_prefix(self) -> str:
+        """CLOB transports route trading under /clob; JWT transports are unprefixed."""
+        return str(getattr(self.transport, "order_prefix", "") or "")
+
     # ------------------------------------------------------------------ #
     # Public entry point: place a live order from an approved proposal
     # ------------------------------------------------------------------ #
@@ -126,7 +130,7 @@ class LiveExecutor:
         if intent.max_match_amount is not None and intent.order_type in ("ioc", "market"):
             body["max_match_amount"] = str(intent.max_match_amount)
 
-        path = f"/api/v1/order/{intent.parent_market_id}/place"
+        path = f"{self._order_prefix()}/api/v1/order/{intent.parent_market_id}/place"
 
         # Persist order BEFORE side effect (place call)
         order = OrderRecord(
@@ -222,7 +226,7 @@ class LiveExecutor:
         if order is None:
             return {"status": "not_found", "order_id": order_id}
 
-        path = f"/api/v1/order/{parent_market_id}/cancel"
+        path = f"{self._order_prefix()}/api/v1/order/{parent_market_id}/cancel"
         body = {"order_id": order_id, "market_id": market_id}
         try:
             resp = self.transport.delete(path, json=body)
@@ -247,7 +251,7 @@ class LiveExecutor:
 
     def cancel_all_per_parent(self, parent_market_id: str) -> dict[str, Any]:
         """Cancel all open orders for a parent. Inspect every result and total_failed."""
-        path = f"/api/v1/order/{parent_market_id}/cancel/all"
+        path = f"{self._order_prefix()}/api/v1/order/{parent_market_id}/cancel/all"
         try:
             resp = self.transport.delete(path, json=None)
         except PredTransportError as exc:

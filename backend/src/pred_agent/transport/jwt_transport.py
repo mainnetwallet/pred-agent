@@ -20,6 +20,8 @@ from .protocol import PredTransport, PredTransportError, TransportCaps
 class JwtTransport(PredTransport):
     """PRED transport using JWT authentication."""
 
+    order_prefix = ""
+
     def __init__(self, auth: JwtAuth, base_url: str = "https://www.pred.app",
                  http_client: httpx.Client | None = None) -> None:
         self.auth = auth
@@ -80,6 +82,10 @@ class JwtTransport(PredTransport):
         _, result, _ = self._request("POST", "/api/v1/user/safe-approval/execute",
                                      json={"signature": signature, "data": data})
         return result
+
+    def get_balance(self) -> dict[str, Any]:
+        """GET /api/v1/portfolio/balance — top-level success/usdc_balance/position_balance."""
+        return self.get("/api/v1/portfolio/balance")
 
     def ably_token(self) -> dict[str, Any]:
         """POST /api/v1/auth/ably — raw Ably TokenDetails."""
