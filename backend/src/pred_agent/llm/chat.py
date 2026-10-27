@@ -26,10 +26,10 @@ log = logging.getLogger(__name__)
 # System prompt
 # ─────────────────────────────────────────────────────────────
 
-SYSTEM_PROMPT = """\
+_SYSTEM_PROMPT_TEMPLATE = """\
 You are the PRED Agent assistant — a sports trading assistant for the PRED prediction market.
-You help the user manage their PAPER trading positions, monitor live and upcoming football matches,
-and set automatic exit rules.
+You help the user manage their @@MODE_NOUN@@ trading positions, monitor live and upcoming football
+matches, and set automatic exit rules.
 
 CRITICAL SAFETY RULES (never violate):
 1. You CANNOT execute, approve, confirm or cancel anything. You only CREATE pending proposals/rules
@@ -43,7 +43,7 @@ CRITICAL SAFETY RULES (never violate):
 7. Reply in the SAME language/script the user used: Bengali (বাংলা), Banglish, or English.
 8. If data is missing or feeds are down, SAY SO — never guess scores, odds, or prices.
 9. Kickoff times in replies must be shown in Asia/Dhaka time (UTC+6).
-10. The system only operates in PAPER mode. Real money is NEVER at risk from this chat.
+@@MODE_RULE@@
 
 You have access to read-only tools to fetch live data. Use them before answering questions about
 matches, positions, or prices. Do not answer from memory.
@@ -64,6 +64,28 @@ honestly and do NOT retry the same parameters.
 
 For status/position/order queries: call the relevant tool and present the data.
 """
+
+_MODE_TEXT = {
+    "PAPER": (
+        "PAPER",
+        "10. The system is in PAPER mode (simulated fills). Real money is NOT at risk.",
+    ),
+    "LIVE": (
+        "LIVE",
+        "10. The system is in LIVE mode: a confirmed proposal places a REAL-MONEY order. "
+        "Always state the exact market, side and USD amount, and remind the user that "
+        "confirming spends real money. NEVER describe trades as paper/simulated.",
+    ),
+}
+
+
+def build_system_prompt(mode: str = "PAPER") -> str:
+    """System prompt for the given trading mode. Unknown modes fail closed to LIVE wording."""
+    noun, rule = _MODE_TEXT.get(mode.upper(), _MODE_TEXT["LIVE"])
+    return _SYSTEM_PROMPT_TEMPLATE.replace("@@MODE_NOUN@@", noun).replace("@@MODE_RULE@@", rule)
+
+
+SYSTEM_PROMPT = build_system_prompt("PAPER")  # backwards-compatible default
 
 # ─────────────────────────────────────────────────────────────
 # Data types
@@ -121,7 +143,9 @@ class ChatLLM:
         base_url: str,
         tools: list[Tool],
         transport: httpx.AsyncBaseTransport | None = None,
+        mode_provider: Callable[[], str] | None = None,
     ) -> None:
+        self._mode_provider = mode_provider
         self._api_key = api_key
         self.model = model
         base_url = base_url.strip().rstrip("/")
@@ -296,7 +320,8 @@ class ChatLLM:
         return parsed if isinstance(parsed, dict) else None
 
     def _build_messages(self, history: list[ChatMessage], user_message: str) -> list[dict[str, Any]]:
-        msgs: list[dict[str, Any]] = [{"role": "system", "content": SYSTEM_PROMPT}]
+        mode = self._mode_provider() if self._mode_provider else "PAPER"
+        msgs: list[dict[str, Any]] = [{"role": "system", "content": build_system_prompt(mode)}]
         for h in history:
             m: dict[str, Any] = {"role": h.role, "content": h.content}
             if h.tool_calls:
@@ -470,7 +495,11 @@ def build_chat_llm(
     model: str | None,
     base_url: str,
     tools: list[Tool],
+    mode_provider: Callable[[], str] | None = None,
 ) -> "ChatLLM | DummyChatLLM":
     if api_key and model:
-        return ChatLLM(api_key=api_key, model=model, base_url=base_url, tools=tools)
+        return ChatLLM(
+            api_key=api_key, model=model, base_url=base_url, tools=tools,
+            mode_provider=mode_provider,
+        )
     return DummyChatLLM()
