@@ -64,9 +64,8 @@ class Scanner:
         offset = 0
         while True:
             page = self._fetch_page(offset)
-            parents = page.get("parent_markets_list", [])
-            if not parents:
-                break
+            parents = page.get("parent_markets_list") or []
+            # Docs: keep paging on empty pages; stop only when data.total is exhausted.
             for entry in parents:
                 pmd = entry.get("parent_market_data", {})
                 if pmd.get("parent_market_family") != "moneyline":
@@ -202,8 +201,7 @@ class Scanner:
                 _time.sleep(min(wait, 60.0))  # cap wait at 60s
                 continue
             resp.raise_for_status()
-            page: dict[str, Any] = resp.json()
-            return page
+            return _unwrap_page(resp.json())
         raise RuntimeError(f"Failed to fetch discovery page after {max_retries} retries (429 rate limited)")
 
     def _enforce_rate_limit(self) -> None:
@@ -216,6 +214,21 @@ class Scanner:
             if elapsed < min_interval:
                 _time.sleep(min_interval - elapsed)
         self._last_request_time = _time.time()
+
+
+def _unwrap_page(body: Any) -> dict[str, Any]:
+    """Discovery responds with {"data": {"parent_markets_list": [...], "total": N}}.
+
+    Accept the bare shape too, so a docs/API change never silently yields an empty feed.
+    """
+    if not isinstance(body, dict):
+        raise RuntimeError(f"unexpected discovery response type: {type(body).__name__}")
+    inner = body.get("data")
+    if isinstance(inner, dict) and ("parent_markets_list" in inner or "total" in inner):
+        return inner
+    if "parent_markets_list" in body:
+        return body
+    raise RuntimeError(f"unexpected discovery response shape; keys={sorted(body)[:10]}")
 
 
 def _parse_rfc3339(value: str) -> datetime:

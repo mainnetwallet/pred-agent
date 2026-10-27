@@ -98,6 +98,8 @@ async def scan_once(
     """One discovery pass: scan → cache → DB → book tracking → event."""
     results = await asyncio.to_thread(scanner.scan_active_moneyline)
     if not results:
+        # Fail closed: an empty scan does not count as a healthy feed.
+        log.warning("scan_once found 0 active moneyline fixtures; feeds not marked fresh")
         return results
 
     fixture_cache.update(results)
