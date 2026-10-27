@@ -99,7 +99,7 @@ export const useUIStore = create<UIStore>((set) => ({
       mode: status.mode,
       paused: status.paused,
       feedsOk: status.feeds_ok,
-      balance: status.balance,
+      balance: status.balance ?? "0.00",
       exposure: status.exposure,
       dailyPnl: status.daily_pnl,
     }),

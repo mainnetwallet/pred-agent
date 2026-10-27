@@ -3,7 +3,7 @@
  * Phase 8 (D2): list ACTIVE/PENDING rules, confirm PENDING, cancel ACTIVE/PENDING.
  */
 
-import React, { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,

@@ -269,8 +269,6 @@ describe("Confirm flow (biometric gate)", () => {
 
 describe("WebSocket reconnect", () => {
   test("schedules reconnect on close with exponential back-off", () => {
-    const ws = new ControlWebSocket("http://localhost:8000");
-
     // Access private method via type cast for unit test
     const delays: number[] = [];
     for (let attempt = 1; attempt <= 6; attempt++) {
