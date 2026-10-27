@@ -23,6 +23,7 @@ from pred_agent.execution.state_machine import (
 )
 from pred_agent.signer.eip712 import sign_order
 from pred_agent.transport.protocol import PredTransport, PredTransportError
+from pred_agent.util.fees import signed_fee_bps
 from pred_agent.util.redaction import redact
 from pred_agent.util.time import CLOCK
 from pred_agent.util.units import price_cents_to_wei, shares_to_wei
@@ -42,6 +43,9 @@ class LiveOrderIntent:
     expiration: int = 0
     reduce_only: bool = False
     max_match_amount: Decimal | None = None
+    # Discovery target fee (parent_market_data.fee_rate_bps). When set, the signed rate is
+    # recomputed from it and price; fee_rate_bps is overwritten (docs: never sign the raw target).
+    fee_target_bps: int | None = None
 
 
 class LiveExecutor:
@@ -55,6 +59,7 @@ class LiveExecutor:
         eoa_address: str,
         signer_private_key: str,
         chain_id: int = 8453,
+        proxy_address: str | None = None,
     ) -> None:
         settings = load_settings()
         if not settings.live_trading:
@@ -64,6 +69,8 @@ class LiveExecutor:
         self.eoa_address = eoa_address
         self.signer_private_key = signer_private_key
         self.chain_id = chain_id
+        # Order `maker` must be the user's Safe (proxy wallet), `signer` is the EOA.
+        self.proxy_address = proxy_address
 
     def _order_prefix(self) -> str:
         """CLOB transports route trading under /clob; JWT transports are unprefixed."""
@@ -82,6 +89,9 @@ class LiveExecutor:
         """Full live placement pipeline. Returns the order record or None on abort."""
         market_id = intent.market_id
 
+        if intent.fee_target_bps is not None:
+            intent.fee_rate_bps = signed_fee_bps(intent.fee_target_bps, intent.price_cents)
+
         # 1. Re-validate before placing (child status, book, edge, slippage, units, fee target)
         if not self._revalidate(intent):
             self.sm.block_market(market_id)
@@ -98,7 +108,7 @@ class LiveExecutor:
             chain_id=self.chain_id,
             verifying_contract=intent.contract_address,
             salt=salt,
-            maker=self.eoa_address,      # Safe
+            maker=self.proxy_address,    # user's Safe (proxy wallet)
             signer=self.eoa_address,     # EOA (same for this simple setup)
             price=price_wei,
             quantity=quantity_wei,
@@ -204,6 +214,9 @@ class LiveExecutor:
 
     def _revalidate(self, intent: LiveOrderIntent) -> bool:
         """Re-validate child status, book, edge, slippage, units, fee target."""
+        # Maker (Safe) address unknown -> fail closed
+        if not self.proxy_address:
+            return False
         # Market blocked?
         if self.sm.is_market_blocked(intent.parent_market_id):
             return False
@@ -295,6 +308,7 @@ class LiveExecutor:
         price_cents: Decimal,
         quantity: Decimal,
         amount_usd: Decimal,
+        fee_target_bps: int,
     ) -> OrderRecord | None:
         """Create a reduce_only opposite-side order to close a position."""
         intent = LiveOrderIntent(
@@ -306,7 +320,8 @@ class LiveExecutor:
             quantity=quantity,
             amount_usd=amount_usd,
             order_type="limit",
-            fee_rate_bps=0,  # will be set by caller after fee computation
+            fee_rate_bps=0,  # overwritten from fee_target_bps in place_from_proposal
+            fee_target_bps=fee_target_bps,
             reduce_only=True,
         )
         return self.place_from_proposal(proposal_id=proposal_id, intent=intent)

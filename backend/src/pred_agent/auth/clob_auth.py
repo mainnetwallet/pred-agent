@@ -86,7 +86,7 @@ class ClobAuth:
         if self._aggregator_api_key:
             headers["X-Aggregator-API-Key"] = self._aggregator_api_key
         resp = self._http.post(f"{self._base_url}/clob/auth/api-key", headers=headers)
-        if resp.status_code == 400:
+        if resp.status_code == 400 and "nonce_already_used" in resp.text:
             # nonce already used — derive with same nonce, fresh signature
             return self.derive_credentials(nonce)
         resp.raise_for_status()

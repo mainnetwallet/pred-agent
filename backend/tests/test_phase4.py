@@ -171,6 +171,7 @@ def test_live_executor_place_success(monkeypatch):
         transport=transport, state_machine=sm,
         eoa_address="0x" + "11" * 20,
         signer_private_key="0x" + "22" * 32,
+        proxy_address="0x" + "33" * 20,
     )
 
     intent = LiveOrderIntent(
@@ -212,6 +213,7 @@ def test_live_executor_place_error_unknown(monkeypatch):
         transport=transport, state_machine=sm,
         eoa_address="0x" + "11" * 20,
         signer_private_key="0x" + "22" * 32,
+        proxy_address="0x" + "33" * 20,
     )
 
     intent = LiveOrderIntent(
@@ -282,3 +284,26 @@ def test_kit_states_covered():
         OrderState.REJECTED,
     }
     assert set(LEGAL_TRANSITIONS.keys()) == expected
+
+
+def test_live_executor_fails_closed_without_proxy(monkeypatch):
+    import pred_agent.execution.live_executor as le_mod
+
+    class FakeSettings:
+        live_trading = True
+
+    monkeypatch.setattr(le_mod, "load_settings", lambda: FakeSettings())
+    transport = MockTransport()
+    exec_ = LiveExecutor(
+        transport=transport, state_machine=OrderStateMachine(),
+        eoa_address="0x" + "11" * 20, signer_private_key="0x" + "22" * 32,
+    )
+    intent = LiveOrderIntent(
+        market_id="0x" + "ab" * 32, parent_market_id="0x" + "cd" * 32,
+        contract_address="0x" + "ee" * 20, side="long", price_cents=Decimal("68"),
+        quantity=Decimal("2"), amount_usd=Decimal("1.36"), order_type="limit",
+        fee_rate_bps=0, fee_target_bps=250,
+    )
+    assert exec_.place_from_proposal(proposal_id="p", intent=intent) is None
+    assert intent.fee_rate_bps == 170  # signed rate recomputed from target
+    assert transport.calls == []
