@@ -20,7 +20,10 @@ def test_inline_script_has_valid_syntax():
     assert m, "no inline <script> found"
     with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False) as f:
         f.write(m.group(1))
-    res = subprocess.run(["node", "--check", f.name], capture_output=True, text=True)
+    node = shutil.which("node")
+    res = subprocess.run(  # noqa: S603
+        [node, "--check", f.name], capture_output=True, text=True, check=False
+    )
     assert res.returncode == 0, res.stderr
 
 
