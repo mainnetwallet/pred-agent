@@ -90,6 +90,9 @@ jobs:
             # Error ta annotation hishebe dekhano hocche (log na khuleo dekha jay)
             msg=$(grep -B2 -A30 -m1 -E "What went wrong|error:|FAILURE" "$RUNNER_TEMP/gradle.log" | head -50 | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
             echo "::error title=Gradle build failed::${msg}"
+            # Kotlin/Java compile error line gulo (e: ... ba error: ...)
+            kt=$(grep -E "^e: |error: " "$RUNNER_TEMP/gradle.log" | head -15 | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
+            if [ -n "$kt" ]; then echo "::error title=Compiler errors::${kt}"; fi
           fi
           exit $code
         env:
