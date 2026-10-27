@@ -11,13 +11,12 @@ import {
   FlatList,
 } from "react-native";
 import * as LocalAuthentication from "expo-local-authentication";
-import { useUIStore, useOrdersStore } from "../store/index";
+import { useUIStore } from "../store/index";
 import { api } from "../services/api";
 import { StatusBanner } from "../components/common";
 
 export const PanicScreen: React.FC = () => {
   const { mode, paused } = useUIStore();
-  const { orders, setOrders } = useOrdersStore();
   const [confirming, setConfirming] = useState(false);
   const [results, setResults] = useState<any[]>([]);
 

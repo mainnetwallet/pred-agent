@@ -19,9 +19,6 @@ export const ProbabilityGauge: React.FC<ProbabilityGaugeProps> = ({
   pHigh,
   side,
 }) => {
-  const barWidth = 200;
-  const barHeight = 8;
-
   const getPosition = (value: number | null) => {
     if (value === null) return 0;
     // value is 0-1 for p_fair, 0-100 for market price

@@ -1,9 +1,8 @@
 // Main app entry — Expo Router not used; simple navigator with screens
 
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   View,
-  Text,
   StyleSheet,
   ActivityIndicator,
 } from "react-native";
@@ -21,7 +20,7 @@ import { api } from "./services/api";
 const Stack = createStackNavigator();
 
 export default function App() {
-  const { deviceToken, isAuthenticated, setToken } = useAuthStore();
+  const { deviceToken, isAuthenticated } = useAuthStore();
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {

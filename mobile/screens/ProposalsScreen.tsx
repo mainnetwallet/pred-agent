@@ -15,7 +15,7 @@ import * as LocalAuthentication from "expo-local-authentication";
 import { useUIStore, useProposalsStore } from "../store/index";
 import { api } from "../services/api";
 import { StatusBanner, OfflineBadge } from "../components/common";
-import { formatEdge, formatUsd, formatPriceCents, formatDateTime } from "../utils/format";
+import { formatEdge, formatDateTime } from "../utils/format";
 
 export const ProposalsScreen: React.FC = () => {
   const { proposals, setProposals } = useProposalsStore();

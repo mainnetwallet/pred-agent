@@ -1,19 +1,17 @@
 // Home screen — status strip (PAPER/LIVE + paused), balance, exposure, daily PnL,
 // pending proposals count, live fixtures list (kit/08_MOBILE_APP.md)
 
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import {
   View,
   Text,
   FlatList,
   StyleSheet,
-  RefreshControl,
   ActivityIndicator,
 } from "react-native";
 import { useUIStore, useProposalsStore } from "../store/index";
 import { api } from "../services/api";
 import { StatusBanner, MoneyDisplay, OfflineBadge } from "../components/common";
-import { formatUsd } from "../utils/format";
 
 export const HomeScreen: React.FC = () => {
   const { setStatus, mode, paused, feedsOk, balance, exposure, dailyPnl } = useUIStore();
@@ -43,15 +41,6 @@ export const HomeScreen: React.FC = () => {
   };
 
   const pendingCount = proposals.filter((p) => p.status === "PROPOSED").length;
-
-  const renderFixture = ({ item }: { item: any }) => (
-    <View style={styles.fixtureRow}>
-      <Text style={styles.fixtureName}>
-        {item.home_team} vs {item.away_team}
-      </Text>
-      <Text style={styles.fixtureStatus}>{item.status}</Text>
-    </View>
-  );
 
   return (
     <View style={styles.container}>
@@ -87,7 +76,7 @@ export const HomeScreen: React.FC = () => {
         </View>
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Live Fixtures</Text>
-          <ActivityIndicator size="small" />
+          <ActivityIndicator size="small" animating={refreshing} />
         </View>
       </View>
     </View>

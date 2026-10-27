@@ -8,7 +8,6 @@ import {
   TouchableOpacity,
   StyleSheet,
   Alert,
-  ActivityIndicator,
 } from "react-native";
 import { useAuthStore } from "../store/index";
 import { api } from "../services/api";

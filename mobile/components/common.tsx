@@ -1,20 +1,19 @@
 // Reusable components
 
 import React from "react";
-import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator } from "react-native";
-import { formatUsd, formatPriceCents, formatEdge, isLiveMode, isPaperMode } from "../utils/format";
+import { View, Text, StyleSheet, ActivityIndicator } from "react-native";
+import { formatUsd, isLiveMode } from "../utils/format";
 
 export const StatusBanner: React.FC<{
   mode: string | null;
   paused: boolean;
 }> = ({ mode, paused }) => {
   const live = isLiveMode(mode);
-  const paper = isPaperMode(mode);
 
   if (!mode) {
     return (
       <View style={styles.container}>
-        <Text style={styles.text}>Loading...</Text>
+        <Text style={styles.label}>Loading...</Text>
       </View>
     );
   }
@@ -62,9 +61,9 @@ export const MoneyDisplay: React.FC<{
   label?: string;
 }> = ({ amount, label }) => {
   return (
-    <View style={styles.moneyContainer}>
-      {label && <Text style={styles.moneyLabel}>{label}</Text>}
-      <Text style={styles.moneyValue}>{formatUsd(amount)}</Text>
+    <View style={moneyStyles.moneyContainer}>
+      {label && <Text style={moneyStyles.moneyLabel}>{label}</Text>}
+      <Text style={moneyStyles.moneyValue}>{formatUsd(amount)}</Text>
     </View>
   );
 };
@@ -88,7 +87,7 @@ const moneyStyles = StyleSheet.create({
 
 export const LoadingSpinner: React.FC = () => {
   return (
-    <View style={styles.spinnerContainer}>
+    <View style={spinnerStyles.spinnerContainer}>
       <ActivityIndicator size="large" color="#666" />
     </View>
   );
@@ -108,8 +107,8 @@ export const OfflineBadge: React.FC<{
 }> = ({ stale, lastUpdate }) => {
   if (!stale && !lastUpdate) return null;
   return (
-    <View style={styles.offlineContainer}>
-      <Text style={styles.offlineText}>
+    <View style={offlineStyles.offlineContainer}>
+      <Text style={offlineStyles.offlineText}>
         {stale ? "STALE — " : ""}Last update: {lastUpdate || "—"}
       </Text>
     </View>

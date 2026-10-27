@@ -9,7 +9,6 @@ import {
   StyleSheet,
   Alert,
   TextInput,
-  Switch,
 } from "react-native";
 import * as LocalAuthentication from "expo-local-authentication";
 import { useUIStore, useDevicesStore } from "../store/index";
@@ -21,7 +20,6 @@ export const LimitsSettingsScreen: React.FC = () => {
   const { mode, paused } = useUIStore();
   const { devices, setDevices } = useDevicesStore();
   const [limits, setLimits] = useState<any[]>([]);
-  const [refreshing, setRefreshing] = useState(false);
   const [editing, setEditing] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
 
