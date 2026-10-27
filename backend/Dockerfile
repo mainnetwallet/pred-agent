@@ -27,6 +27,7 @@ RUN pip install --upgrade pip setuptools wheel && \
         "pydantic==2.10.3" "pydantic-settings==2.6.1" "SQLAlchemy==2.0.36" "alembic==1.13.1" \
         "eth-account==0.13.2" "web3==7.10.0" "ably==3.1.4" "python-telegram-bot==21.4" \
         "structlog==24.4.0" "pyyaml==6.0.2" "python-dateutil==2.9.0.post0" \
+        "psycopg2-binary>=2.9.9" \
         "pytest==9.0.3" "pytest-asyncio==1.4.1" "types-PyYAML==6.0.12.20260906" "ruff==0.9.6" "mypy==1.13.0" "pip-audit==2.7.2"
 
 # ---------------------------------------------------------------------------
