@@ -16,8 +16,10 @@ import {
   Rule,
   ChatTurn,
   ChatHistory,
+  ChatStreamHandlers,
 } from "../types/api";
 import { DEFAULT_SERVER_URL } from "../utils/defaults";
+import { createSseParser } from "./sse";
 
 const DEFAULT_BASE = DEFAULT_SERVER_URL;
 
@@ -238,6 +240,83 @@ class ApiClient {
     return this.request<ChatTurn>("/v1/chat", {
       method: "POST",
       body: JSON.stringify({ message, ...(sessionId ? { session_id: sessionId } : {}) }),
+    });
+  }
+
+  /**
+   * Streaming chat (SSE). Uses XMLHttpRequest because React Native's fetch
+   * does not expose the response body incrementally. Resolves with the same
+   * envelope shape as `chat()` once the `done` event arrives.
+   */
+  chatStream(
+    message: string,
+    sessionId: string | null | undefined,
+    handlers: ChatStreamHandlers
+  ): Promise<ApiEnvelope<ChatTurn>> {
+    const sentToken = this.token;
+    return new Promise((resolve) => {
+      const xhr = new XMLHttpRequest();
+      let final: ApiEnvelope<ChatTurn> | null = null;
+      let sid: string | null = sessionId ?? null;
+
+      const parser = createSseParser((event, d) => {
+        if (event === "session") {
+          sid = d.session_id;
+          handlers.onSession?.(d.session_id);
+        } else if (event === "delta") handlers.onDelta?.(d.text);
+        else if (event === "tool") handlers.onTool?.(d.name);
+        else if (event === "reset") handlers.onReset?.();
+        else if (event === "cards") handlers.onCards?.(d.cards ?? []);
+        else if (event === "done") {
+          if (d.error === "llm_not_configured") {
+            final = {
+              ok: false,
+              data: { session_id: d.session_id ?? sid ?? "", reply: d.reply, cards: d.cards ?? [] },
+              error: { code: "llm_not_configured", message: d.reply },
+            } as ApiEnvelope<ChatTurn>;
+          } else if (d.error) {
+            final = {
+              ok: false,
+              error: { code: d.error, message: d.reply || "Chat error. Try again." },
+            } as ApiEnvelope<ChatTurn>;
+          } else {
+            final = {
+              ok: true,
+              data: { session_id: d.session_id ?? sid ?? "", reply: d.reply, cards: d.cards ?? [] },
+            } as ApiEnvelope<ChatTurn>;
+          }
+        }
+      });
+
+      xhr.open("POST", `${this.base}/v1/chat/stream`);
+      xhr.setRequestHeader("Content-Type", "application/json");
+      if (sentToken) xhr.setRequestHeader("Authorization", `Bearer ${sentToken}`);
+
+      xhr.onprogress = () => {
+        if (xhr.status === 200) parser.feed(xhr.responseText || "");
+      };
+      xhr.onerror = () =>
+        resolve({ ok: false, error: { code: "network", message: "Network error. Check connection." } } as ApiEnvelope<ChatTurn>);
+      xhr.onload = () => {
+        if (xhr.status === 401 && sentToken && sentToken === this.token && this.unauthorizedHandler) {
+          this.unauthorizedHandler();
+        }
+        if (xhr.status !== 200) {
+          let body: any = {};
+          try { body = JSON.parse(xhr.responseText); } catch { /* not JSON */ }
+          resolve({
+            ok: false,
+            error: body.error || { code: "http_error", message: `HTTP ${xhr.status}` },
+          } as ApiEnvelope<ChatTurn>);
+          return;
+        }
+        parser.feed(xhr.responseText || "");
+        resolve(
+          final ??
+            ({ ok: false, error: { code: "stream_ended", message: "No reply received." } } as ApiEnvelope<ChatTurn>)
+        );
+      };
+      xhr.send(JSON.stringify({ message, ...(sessionId ? { session_id: sessionId } : {}) }));
     });
   }
 

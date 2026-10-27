@@ -145,6 +145,7 @@ export default function ChatScreen() {
   const [loading, setLoading] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [toolName, setToolName] = useState<string | null>(null);
   const scrollRef = useRef<ScrollView>(null);
   const navigation = useNavigation<any>();
 
@@ -173,27 +174,50 @@ export default function ChatScreen() {
     setLoading(true);
     setError(null);
 
+    const aiId = (Date.now() + 1).toString();
+    let started = false;
+    const upsert = (patch: (m: LocalMessage) => LocalMessage) => {
+      setMessages((prev) => {
+        if (!prev.some((m) => m.id === aiId)) {
+          return [...prev, patch({ id: aiId, role: "assistant", content: "" })];
+        }
+        return prev.map((m) => (m.id === aiId ? patch(m) : m));
+      });
+    };
+
     try {
-      const r = await api.chat(trimmed, sessionId);
-      if (r.data) {
+      const r = await api.chatStream(trimmed, sessionId, {
+        onSession: (sid) => { if (!sessionId) setSessionId(sid); },
+        onDelta: (t) => {
+          started = true;
+          setToolName(null);
+          upsert((m) => ({ ...m, content: m.content + t }));
+        },
+        onTool: (name) => setToolName(name),
+        onReset: () => upsert((m) => ({ ...m, content: "" })),
+        onCards: (cards) => {
+          started = true;
+          upsert((m) => ({ ...m, cards: [...(m.cards ?? []), ...cards] }));
+        },
+      });
+      if (r.ok && r.data) {
         if (!sessionId) setSessionId(r.data.session_id);
-        const assistantMsg: LocalMessage = {
-          id: (Date.now() + 1).toString(),
-          role: "assistant",
-          content: r.data.reply,
-          cards: r.data.cards,
-        };
-        setMessages((prev) => [...prev, assistantMsg]);
-      } else if (r.error?.code === "llm_not_configured") {
-        setError("LLM কনফিগার করা নেই। সার্ভারে LLM_API_KEY এবং LLM_MODEL সেট করুন।");
-      } else if (r.error?.code === "rate_limited") {
-        setError("বেশি বার্তা পাঠাচ্ছেন। একটু অপেক্ষা করুন।");
+        // Replace streamed text with the final canonical reply + cards.
+        upsert((m) => ({ ...m, content: r.data!.reply, cards: r.data!.cards }));
       } else {
-        setError(r.error?.message ?? "Chat error. Try again.");
+        if (started) setMessages((prev) => prev.filter((m) => m.id !== aiId));
+        if (r.error?.code === "llm_not_configured") {
+          setError("LLM কনফিগার করা নেই। সার্ভারে LLM_API_KEY এবং LLM_MODEL সেট করুন।");
+        } else if (r.error?.code === "rate_limited") {
+          setError("বেশি বার্তা পাঠাচ্ছেন। একটু অপেক্ষা করুন।");
+        } else {
+          setError(r.error?.message ?? "Chat error. Try again.");
+        }
       }
     } catch (_e) {
       setError("Network error. Check connection.");
     } finally {
+      setToolName(null);
       setLoading(false);
     }
   }, [loading, sessionId]);
@@ -306,10 +330,10 @@ export default function ChatScreen() {
             ))}
           </View>
         ))}
-        {loading && (
+        {loading && (toolName || messages[messages.length - 1]?.role === "user") && (
           <View style={[styles.msgBubble, styles.aiBubble]}>
             <ActivityIndicator size="small" color="#4c8dff" />
-            <Text style={styles.loadingText}>Thinking…</Text>
+            <Text style={styles.loadingText}>{toolName ? `Using ${toolName}…` : "Thinking…"}</Text>
           </View>
         )}
         {error && (

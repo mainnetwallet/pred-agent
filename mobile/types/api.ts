@@ -202,6 +202,14 @@ export interface ChatTurn {
   cards: ChatCard[];
 }
 
+export interface ChatStreamHandlers {
+  onSession?: (sessionId: string) => void;
+  onDelta?: (text: string) => void;
+  onTool?: (name: string) => void;
+  onReset?: () => void;
+  onCards?: (cards: ChatCard[]) => void;
+}
+
 export interface ChatHistory {
   session_id: string;
   messages: ChatMessage[];
