@@ -77,7 +77,17 @@ jobs:
 
       - name: Build release APK
         working-directory: mobile/android
-        run: ./gradlew assembleRelease --no-daemon
+        run: |
+          set +e
+          ./gradlew assembleRelease --no-daemon --stacktrace > "$RUNNER_TEMP/gradle.log" 2>&1
+          code=$?
+          tail -n 120 "$RUNNER_TEMP/gradle.log"
+          if [ "$code" -ne 0 ]; then
+            # Error ta annotation hishebe dekhano hocche (log na khuleo dekha jay)
+            msg=$(grep -B2 -A30 -m1 -E "What went wrong|error:|FAILURE" "$RUNNER_TEMP/gradle.log" | head -50 | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
+            echo "::error title=Gradle build failed::${msg}"
+          fi
+          exit $code
         env:
           # Repository variable (Settings -> Secrets and variables -> Actions -> Variables).
           # Set na thakle app er default (http://127.0.0.1:8000) use hobe.
