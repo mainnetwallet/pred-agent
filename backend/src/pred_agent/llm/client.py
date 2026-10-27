@@ -32,6 +32,7 @@ class LLMResponse:
     content: str
     parsed: dict[str, Any] | None = None  # schema-validated JSON, or None if invalid
     valid: bool = False
+    error: str | None = None  # short, secret-free reason when valid=False
 
 
 class LLMClient(ABC):

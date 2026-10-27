@@ -111,3 +111,38 @@ def test_llm_endpoints_hide_key(monkeypatch):
     r = c.get("/v1/llm", headers={"Authorization": f"Bearer {tok}"})
     assert r.json()["data"]["configured"] is True
     assert "sk-supersecret" not in r.text
+
+
+@pytest.mark.asyncio
+async def test_error_reason_reported():
+    res = await _client(lambda r: httpx.Response(404, json={"error": {"message": "model not found"}})).complete(REQ)
+    assert res.valid is False and "404" in res.error and "model not found" in res.error
+
+
+@pytest.mark.asyncio
+async def test_empty_content_length_hint():
+    r = httpx.Response(200, json={"choices": [{"message": {"content": ""}, "finish_reason": "length"}]})
+    res = await _client(lambda _r: r).complete(REQ)
+    assert res.valid is False and "max_tokens" in res.error
+
+
+@pytest.mark.asyncio
+async def test_reasoning_content_fallback():
+    r = httpx.Response(200, json={"choices": [{"message": {"content": None, "reasoning_content": '{"adj": 3}'}}]})
+    res = await _client(lambda _r: r).complete(REQ)
+    assert res.valid and res.parsed == {"adj": 3}
+
+
+@pytest.mark.asyncio
+async def test_retries_without_temperature():
+    calls = []
+
+    def handler(request):
+        body = json.loads(request.content)
+        calls.append("temperature" in body)
+        if "temperature" in body:
+            return httpx.Response(400, text="unsupported value: temperature")
+        return _reply('{"adj": 0}')
+
+    res = await _client(handler).complete(REQ)
+    assert res.valid and calls == [True, False]

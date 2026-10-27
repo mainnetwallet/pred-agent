@@ -73,6 +73,16 @@ def _extract_json(text: str) -> Any:
         raise
 
 
+def _provider_error(resp: httpx.Response) -> str:
+    """Short provider error message (never includes request headers/keys)."""
+    try:
+        err = resp.json().get("error")
+        text = err.get("message") if isinstance(err, dict) else err
+    except (ValueError, AttributeError):
+        text = None
+    return str(text or resp.text or resp.reason_phrase)[:200]
+
+
 class OpenAICompatClient(LLMClient):
     def __init__(
         self,
@@ -112,7 +122,7 @@ class OpenAICompatClient(LLMClient):
     async def complete(self, request: LLMRequest) -> LLMResponse:
         if not self._budget_ok():
             log.warning("llm daily call cap reached")
-            return LLMResponse(content="", valid=False)
+            return LLMResponse(content="", valid=False, error="daily call cap reached")
         body: dict[str, Any] = {
             "model": self.model,
             "messages": [
@@ -126,21 +136,38 @@ class OpenAICompatClient(LLMClient):
         try:
             async with httpx.AsyncClient(timeout=self._timeout, transport=self._transport) as c:
                 resp = await self._post(c, body)
-                if resp.status_code == 400 and "response_format" in resp.text:
-                    body.pop("response_format")  # provider has no JSON mode
-                    resp = await self._post(c, body)
-            resp.raise_for_status()
-            content = resp.json()["choices"][0]["message"]["content"] or ""
-        except (httpx.HTTPError, KeyError, IndexError, ValueError) as exc:
+                # Some providers reject optional params: drop them one at a time and retry.
+                for param in ("response_format", "temperature"):
+                    if resp.status_code in (400, 422) and param in resp.text and param in body:
+                        body.pop(param)
+                        resp = await self._post(c, body)
+            if resp.status_code >= 400:
+                detail = _provider_error(resp)
+                log.warning("llm http %s: %s", resp.status_code, detail)
+                return LLMResponse(content="", valid=False,
+                                   error=f"HTTP {resp.status_code}: {detail}")
+            choice = resp.json()["choices"][0]
+            msg = choice["message"]
+            content = msg.get("content") or ""
+            if not content.strip():
+                # Reasoning models can spend the whole budget thinking and return no content.
+                content = msg.get("reasoning_content") or ""
+            if not content.strip():
+                reason = choice.get("finish_reason")
+                hint = " (raise max_tokens)" if reason == "length" else ""
+                log.warning("llm empty content, finish_reason=%s", reason)
+                return LLMResponse(content="", valid=False,
+                                   error=f"empty reply, finish_reason={reason}{hint}")
+        except (httpx.HTTPError, KeyError, IndexError, ValueError, TypeError) as exc:
             # Log the exception type only: never the request (contains no secrets, but be safe).
             log.warning("llm call failed: %s", type(exc).__name__)
-            return LLMResponse(content="", valid=False)
+            return LLMResponse(content="", valid=False, error=f"{type(exc).__name__} calling {self.base_url}")
         try:
             parsed = _extract_json(content)
         except json.JSONDecodeError:
-            return LLMResponse(content=content, valid=False)
+            return LLMResponse(content=content, valid=False, error="reply was not valid JSON")
         if not _validate(parsed, request.response_schema):
-            return LLMResponse(content=content, valid=False)
+            return LLMResponse(content=content, valid=False, error="reply did not match schema")
         return LLMResponse(content=content, parsed=parsed, valid=True)
 
 

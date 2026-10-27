@@ -321,10 +321,11 @@ def create_app() -> FastAPI:
             system_prompt="Reply with JSON only.",
             user_prompt='Return {"ok": true}.',
             response_schema={"type": "object", "required": ["ok"], "properties": {"ok": {"type": "boolean"}}},
-            max_tokens=20,
+            max_tokens=512,  # reasoning models need headroom beyond the tiny JSON reply
         ))
         if not res.valid:
-            return error_response("llm_failed", "LLM call failed; check LLM_API_KEY, LLM_MODEL, LLM_BASE_URL", 502)
+            why = f": {res.error}" if res.error else ""
+            return error_response("llm_failed", f"LLM call failed{why}", 502)
         return envelope(ok=True, data={"model": llm.model, "reply": res.parsed})
 
     @app.get("/v1/fixtures")
