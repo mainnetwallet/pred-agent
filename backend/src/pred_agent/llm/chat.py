@@ -16,7 +16,7 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass, field
-from typing import Any, Callable, Coroutine
+from typing import Any, AsyncIterator, Callable, Coroutine
 
 import httpx
 
@@ -182,33 +182,100 @@ class ChatLLM:
 
             # Execute tool calls
             messages.append({"role": "assistant", "content": msg.get("content") or "", "tool_calls": tool_calls})
-            for tc in tool_calls:
-                fn_name = tc.get("function", {}).get("name", "")
-                fn_args_raw = tc.get("function", {}).get("arguments", "{}")
-                tc_id = tc.get("id", "call_0")
-                fn_args = self._parse_args(fn_args_raw)
-                tool_result: Any
-                new_cards: list[Card]
-                if fn_args is None:
-                    tool_result = {
-                        "error": "invalid_arguments",
-                        "detail": "arguments must be a JSON object; nothing was executed",
-                    }
-                    new_cards = []
-                else:
-                    tool_result, new_cards = await self._run_tool(fn_name, fn_args)
-                cards.extend(new_cards)
+            await self._execute_tool_calls(messages, tool_calls, cards)
 
-                # Wrap tool output in data markers (prompt injection guard)
-                safe_result = (
-                    f"[DATA]\n{json.dumps(tool_result, ensure_ascii=False, default=str)}\n[/DATA]"
-                )
-                messages.append({
-                    "role": "tool",
-                    "tool_call_id": tc_id,
-                    "name": fn_name,
-                    "content": safe_result,
-                })
+    # ── streaming entry point ─────────────────────────────────
+
+    async def chat_stream(
+        self,
+        history: list[ChatMessage],
+        user_message: str,
+    ) -> AsyncIterator[dict[str, Any]]:
+        """Like ``chat`` but yields events while the reply is generated.
+
+        Events (all plain dicts, JSON-serialisable):
+          {"type": "delta", "text": str}                 incremental reply text
+          {"type": "tool", "name": str}                  a tool is being run
+          {"type": "cards", "cards": [{type, data}]}     new cards from tools
+          {"type": "done", "reply": str, "cards": [...], "error": str|None}
+        ``done`` is always the last event. Never raises.
+        """
+        messages = self._build_messages(history, user_message)
+        cards: list[Card] = []
+
+        def _cards_json() -> list[dict[str, Any]]:
+            return [{"type": c.type, "data": c.data} for c in cards]
+
+        while True:
+            body = self._build_body(messages)
+            msg: dict[str, Any] | None = None
+            try:
+                async for kind, payload in self._call_stream(body):
+                    if kind == "delta":
+                        yield {"type": "delta", "text": payload}
+                    else:
+                        msg = payload
+            except Exception as exc:  # noqa: BLE001
+                log.warning("chat llm stream failed: %s", type(exc).__name__)
+                yield {"type": "done", "reply": "সার্ভারে সমস্যা হয়েছে। একটু পরে চেষ্টা করুন।",
+                       "cards": _cards_json(), "error": "llm_error"}
+                return
+
+            msg = msg or {}
+            tool_calls = msg.get("tool_calls")
+            if not tool_calls:
+                content = (msg.get("content") or "").strip()
+                if not content:
+                    log.warning("chat llm returned empty stream reply")
+                    content = _EMPTY_REPLY
+                    yield {"type": "delta", "text": content}
+                yield {"type": "done", "reply": content, "cards": _cards_json(), "error": None}
+                return
+
+            messages.append({"role": "assistant", "content": msg.get("content") or "", "tool_calls": tool_calls})
+            for tc in tool_calls:
+                yield {"type": "tool", "name": tc.get("function", {}).get("name", "")}
+            before = len(cards)
+            await self._execute_tool_calls(messages, tool_calls, cards)
+            if len(cards) > before:
+                yield {"type": "cards", "cards": [{"type": c.type, "data": c.data} for c in cards[before:]]}
+            # Text streamed before the tool call is intermediate: tell clients to reset it.
+            if msg.get("content"):
+                yield {"type": "reset"}
+
+    async def _execute_tool_calls(
+        self,
+        messages: list[dict[str, Any]],
+        tool_calls: list[dict[str, Any]],
+        cards: list[Card],
+    ) -> None:
+        for tc in tool_calls:
+            fn_name = tc.get("function", {}).get("name", "")
+            fn_args_raw = tc.get("function", {}).get("arguments", "{}")
+            tc_id = tc.get("id", "call_0")
+            fn_args = self._parse_args(fn_args_raw)
+            tool_result: Any
+            new_cards: list[Card]
+            if fn_args is None:
+                tool_result = {
+                    "error": "invalid_arguments",
+                    "detail": "arguments must be a JSON object; nothing was executed",
+                }
+                new_cards = []
+            else:
+                tool_result, new_cards = await self._run_tool(fn_name, fn_args)
+            cards.extend(new_cards)
+
+            # Wrap tool output in data markers (prompt injection guard)
+            safe_result = (
+                f"[DATA]\n{json.dumps(tool_result, ensure_ascii=False, default=str)}\n[/DATA]"
+            )
+            messages.append({
+                "role": "tool",
+                "tool_call_id": tc_id,
+                "name": fn_name,
+                "content": safe_result,
+            })
 
     # ── helpers ───────────────────────────────────────────────
 
@@ -275,6 +342,86 @@ class ChatLLM:
                 resp.raise_for_status()
             return resp.json()  # type: ignore[no-any-return]
 
+    async def _call_stream(self, body: dict[str, Any]) -> AsyncIterator[tuple[str, Any]]:
+        """POST with ``stream=true`` and parse the OpenAI-style SSE response.
+
+        Yields ("delta", text) per content chunk, then exactly one
+        ("message", {"content": str, "tool_calls": [...]|None}).
+        If the provider ignores ``stream`` and returns plain JSON, that is
+        handled too (one delta with the full text).
+        """
+        body = {**body, "stream": True}
+        async with httpx.AsyncClient(timeout=None, transport=self._transport) as client:  # noqa: S113
+            for attempt in range(2):
+                async with client.stream(
+                    "POST",
+                    f"{self.base_url}/chat/completions",
+                    headers={"Authorization": f"Bearer {self._api_key}"},
+                    json=body,
+                ) as resp:
+                    if resp.status_code >= 400:
+                        text = (await resp.aread()).decode("utf-8", "replace")
+                        if (attempt == 0 and resp.status_code in (400, 422)
+                                and "temperature" in text and "temperature" in body):
+                            body = {k: v for k, v in body.items() if k != "temperature"}
+                            continue
+                        log.warning("chat llm http %s: %s", resp.status_code, text[:200])
+                        resp.raise_for_status()
+
+                    ctype = resp.headers.get("content-type", "")
+                    if "text/event-stream" not in ctype:
+                        # Provider ignored stream=true: plain JSON body.
+                        data = json.loads(await resp.aread())
+                        msg = (data.get("choices") or [{}])[0].get("message", {})
+                        text = msg.get("content") or ""
+                        if text and not msg.get("tool_calls"):
+                            yield "delta", text
+                        yield "message", {"content": text, "tool_calls": msg.get("tool_calls")}
+                        return
+
+                    content_parts: list[str] = []
+                    calls: dict[int, dict[str, Any]] = {}
+                    async for line in resp.aiter_lines():
+                        line = line.strip()
+                        if not line.startswith("data:"):
+                            continue
+                        payload = line[5:].strip()
+                        if payload == "[DONE]":
+                            break
+                        try:
+                            chunk = json.loads(payload)
+                        except json.JSONDecodeError:
+                            continue
+                        if isinstance(chunk, dict) and chunk.get("error"):
+                            raise RuntimeError("provider stream error")
+                        choices = chunk.get("choices") or []
+                        if not choices:
+                            continue
+                        delta = choices[0].get("delta") or {}
+                        piece = delta.get("content")
+                        if piece:
+                            content_parts.append(piece)
+                            yield "delta", piece
+                        for tcd in delta.get("tool_calls") or []:
+                            idx = tcd.get("index", 0)
+                            slot = calls.setdefault(idx, {
+                                "id": "", "type": "function",
+                                "function": {"name": "", "arguments": ""},
+                            })
+                            if tcd.get("id"):
+                                slot["id"] = tcd["id"]
+                            fn = tcd.get("function") or {}
+                            if fn.get("name"):
+                                slot["function"]["name"] += fn["name"]
+                            if fn.get("arguments"):
+                                slot["function"]["arguments"] += fn["arguments"]
+                    tool_calls = [calls[i] for i in sorted(calls)] or None
+                    if tool_calls:
+                        for n, tc in enumerate(tool_calls):
+                            tc["id"] = tc["id"] or f"call_{n}"
+                    yield "message", {"content": "".join(content_parts), "tool_calls": tool_calls}
+                    return
+
     async def _run_tool(self, name: str, args: dict[str, Any]) -> tuple[Any, list[Card]]:
         tool = self._tools.get(name)
         if tool is None:
@@ -310,6 +457,11 @@ class DummyChatLLM:
             ),
             error="llm_not_configured",
         )
+
+
+    async def chat_stream(self, history: list[ChatMessage], user_message: str) -> AsyncIterator[dict[str, Any]]:
+        resp = await self.chat(history, user_message)
+        yield {"type": "done", "reply": resp.reply, "cards": [], "error": resp.error}
 
 
 def build_chat_llm(

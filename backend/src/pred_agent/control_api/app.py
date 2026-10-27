@@ -24,7 +24,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, Header, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 
 from pred_agent.config import load_settings
 from pred_agent.control_api.auth import DeviceAuth
@@ -1083,6 +1083,67 @@ def create_app(*, background: bool = False) -> FastAPI:  # noqa: PLR0915
                 ),
             )
         return envelope(ok=True, data=data)
+
+    @app.post("/v1/chat/stream")
+    async def chat_stream(body: dict[str, Any], request: Request,  # noqa: PLR0911
+                          authorization: str | None = Header(None)) -> Any:
+        """Same as POST /v1/chat but streamed as Server-Sent Events.
+
+        Events: ``session`` {session_id}, ``delta`` {text}, ``tool`` {name},
+        ``cards`` {cards}, ``reset``, ``done`` {session_id, reply, cards, error}.
+        Validation errors are returned as normal JSON error responses (before
+        the stream starts).
+        """
+        actor = _verify_auth(authorization)
+        if actor is None:
+            return _unauth()
+        if not chat_rl.is_allowed(actor):
+            return error_response("rate_limited", "too many chat messages, slow down", 429)
+
+        message = str(body.get("message", "")).strip()
+        if not message:
+            return error_response("empty_message", "message is required", 400)
+        if len(message) > 4000:
+            return error_response("message_too_long", "message must be <= 4000 chars", 400)
+
+        sid, history = chat_sessions.get_or_create(body.get("session_id"), actor)
+
+        def _sse(event: str, data: dict[str, Any]) -> str:
+            return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False, default=str)}\n\n"
+
+        async def _gen() -> Any:
+            yield _sse("session", {"session_id": sid})
+            final: dict[str, Any] | None = None
+            try:
+                async for ev in _chat_llm.chat_stream(history, message):
+                    etype = ev.get("type", "")
+                    if etype == "done":
+                        final = ev
+                        break
+                    yield _sse(etype, {k: v for k, v in ev.items() if k != "type"})
+            except Exception as exc:  # noqa: BLE001
+                log.error("chat stream error: %s", exc)
+                yield _sse("done", {"session_id": sid, "reply": "Chat service error. Try again.",
+                                    "cards": [], "error": "llm_error"})
+                return
+            if final is None:
+                final = {"reply": "", "cards": [], "error": "llm_error"}
+            # Persist the turn only when the model produced a real reply.
+            if final.get("error") is None:
+                chat_sessions.append(sid, ChatMessage(role="user", content=message))
+                chat_sessions.append(sid, ChatMessage(role="assistant", content=final.get("reply", "")))
+            yield _sse("done", {
+                "session_id": sid,
+                "reply": final.get("reply", ""),
+                "cards": final.get("cards", []),
+                "error": final.get("error"),
+            })
+
+        return StreamingResponse(
+            _gen(),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no"},
+        )
 
     @app.get("/v1/chat/{session_id}")
     async def chat_history(session_id: str, authorization: str | None = Header(None)) -> Any:

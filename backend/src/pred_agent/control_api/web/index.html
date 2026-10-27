@@ -573,29 +573,104 @@ async function sendChatMessage(text) {
   $("chat-send").disabled = true;
   $("chat-status").textContent = "Thinking…";
 
-  const r = await api("/v1/chat", {
-    method: "POST",
-    body: JSON.stringify({ message: text, session_id: chatSessionId }),
-  });
+  // Placeholder assistant bubble that fills in as tokens arrive.
+  // textContent only — NEVER innerHTML with model output (XSS guard).
+  appendChatMsg("assistant", "");
+  const box = $("chat-messages");
+  const bubble = box.lastElementChild;
+  const body = bubble.children[1];
+  const cardEls = [];
+  let acc = "";
+  let finished = false;
 
-  $("chat-send").disabled = false;
-  $("chat-status").textContent = "";
+  const finish = () => {
+    $("chat-send").disabled = false;
+    $("chat-status").textContent = "";
+  };
+  const fail = (msg) => {
+    body.textContent = msg;
+    finish();
+  };
 
-  if (!r.ok && r.error) {
-    if (r.error.code === "llm_not_configured") {
-      appendChatMsg("assistant", "⚠️ LLM কনফিগার করা নেই। সার্ভারে LLM_API_KEY এবং LLM_MODEL সেট করুন।");
-    } else if (r.error.code === "rate_limited") {
-      appendChatMsg("assistant", "⚠️ একটু ধীরে — বেশি বার্তা পাঠাচ্ছেন। একটু অপেক্ষা করুন।");
-    } else {
-      appendChatMsg("assistant", "❌ " + (r.error.message || "Error occurred."));
+  let resp;
+  try {
+    const headers = { "Content-Type": "application/json" };
+    if (token) headers.Authorization = "Bearer " + token;
+    resp = await fetch("/v1/chat/stream", {
+      method: "POST", headers,
+      body: JSON.stringify({ message: text, session_id: chatSessionId }),
+    });
+  } catch (_) {
+    return fail("❌ Cannot reach the server.");
+  }
+
+  if (resp.status === 401 && token) { signOut(); return fail("❌ Session expired."); }
+  if (!resp.ok || !resp.body) {
+    let err = {};
+    try { err = (await resp.json()).error || {}; } catch (_) {}
+    if (err.code === "rate_limited") return fail("⚠️ একটু ধীরে — বেশি বার্তা পাঠাচ্ছেন। একটু অপেক্ষা করুন।");
+    return fail("❌ " + (err.message || "Error occurred."));
+  }
+
+  const handle = (event, d) => {
+    if (event === "session") {
+      if (!chatSessionId) chatSessionId = d.session_id;
+    } else if (event === "delta") {
+      acc += d.text;
+      body.textContent = acc;
+      $("chat-status").textContent = "";
+      box.scrollTop = box.scrollHeight;
+    } else if (event === "tool") {
+      $("chat-status").textContent = "Using tool: " + (d.name || "…");
+    } else if (event === "reset") {
+      acc = "";
+      body.textContent = "";
+    } else if (event === "cards") {
+      (d.cards || []).forEach((card) => {
+        const cardEl = renderCard(card);
+        if (cardEl) { bubble.append(cardEl); cardEls.push(cardEl); }
+      });
+      box.scrollTop = box.scrollHeight;
+    } else if (event === "done") {
+      finished = true;
+      if (d.session_id && !chatSessionId) chatSessionId = d.session_id;
+      if (d.error === "llm_not_configured") {
+        body.textContent = "⚠️ LLM কনফিগার করা নেই। সার্ভারে LLM_API_KEY এবং LLM_MODEL সেট করুন।";
+      } else if (d.error) {
+        body.textContent = "❌ " + (d.reply || "Error occurred.");
+      } else {
+        body.textContent = d.reply || acc;
+      }
+      box.scrollTop = box.scrollHeight;
     }
-    return;
-  }
+  };
 
-  if (r.data) {
-    if (!chatSessionId) chatSessionId = r.data.session_id;
-    appendChatMsg("assistant", r.data.reply || "", r.data.cards);
+  try {
+    const reader = resp.body.getReader();
+    const dec = new TextDecoder();
+    let buf = "";
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      let i;
+      while ((i = buf.indexOf("\n\n")) !== -1) {
+        const frame = buf.slice(0, i);
+        buf = buf.slice(i + 2);
+        let ev = "message", data = "";
+        for (const line of frame.split("\n")) {
+          if (line.startsWith("event:")) ev = line.slice(6).trim();
+          else if (line.startsWith("data:")) data += line.slice(5).trim();
+        }
+        if (!data) continue;
+        try { handle(ev, JSON.parse(data)); } catch (_) {}
+      }
+    }
+  } catch (_) {
+    if (!finished) body.textContent = (acc ? acc + "\n\n" : "") + "⚠️ Connection lost.";
   }
+  if (!finished && !acc) body.textContent = "⚠️ No reply received.";
+  finish();
 }
 
 function sendChip(text) {
