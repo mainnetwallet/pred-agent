@@ -57,15 +57,18 @@ COPY --from=builder /usr/local/bin /usr/local/bin
 COPY backend/ ./backend/
 COPY PLAN.md DOCS_FINDINGS.md ./
 
-# Make sure alembic can find its config
-ENV ALEMBIC_INI=/app/backend/alembic.ini
+# Make sure alembic can find its config; make the package importable
+ENV ALEMBIC_INI=/app/backend/alembic.ini \
+    PYTHONPATH=/app/backend/src
+WORKDIR /app/backend
 
 # Run migrations and start agent as non-root
 USER predagent
 
 EXPOSE 8000
+# Render sets $PORT at runtime; main.py binds to it (falls back to 8000).
 
-HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5)" || exit 1
+HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
+    CMD python -c "import os,urllib.request; urllib.request.urlopen('http://127.0.0.1:%s/health' % os.environ.get('PORT','8000'), timeout=5)" || exit 1
 
 CMD ["python", "-m", "pred_agent.main"]

@@ -7,8 +7,7 @@ position monitor, Telegram polling, Control API server, daily reports.
 
 from __future__ import annotations
 
-import asyncio
-import signal
+import os
 import sys
 
 from pred_agent.config import load_settings
@@ -25,33 +24,22 @@ def main() -> int:
     print(f"Host: {settings.host}")
     print(f"Chain ID: {settings.chain_id}")
 
-    # TODO: wire scanner, realtime, execution, telegram, control_api here.
-    # This is the process entry point; phase modules are imported and started
-    # from this main loop.
+    # TODO: wire scanner, realtime, execution, telegram here.
+    # For now the process serves the Control API (health, pairing, ws).
+    import uvicorn
 
-    # Graceful shutdown on SIGINT/SIGTERM
-    try:
-        loop = asyncio.get_running_loop()
-    except RuntimeError:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-    stop = asyncio.Event()
+    from pred_agent.control_api.app import create_app
 
-    def _handle_signal() -> None:
-        stop.set()
+    # Render (and most PaaS) inject PORT and require binding 0.0.0.0.
+    # Elsewhere, honour CONTROL_API_BIND (Tailscale IP) or stay on localhost.
+    port = int(os.environ.get("PORT", "8000"))
+    if os.environ.get("PORT"):
+        bind = "0.0.0.0"  # noqa: S104
+    else:
+        bind = settings.control_api_bind or "127.0.0.1"
 
-    for sig in (signal.SIGINT, signal.SIGTERM):
-        try:
-            loop.add_signal_handler(sig, _handle_signal)
-        except NotImplementedError:
-            # Windows may not support add_signal_handler
-            pass
-
-    print("pred-agent running. Press Ctrl+C to stop.")
-    try:
-        asyncio.get_event_loop().run_until_complete(stop.wait())
-    finally:
-        print("pred-agent stopped.")
+    print(f"Control API listening on {bind}:{port}")
+    uvicorn.run(create_app(), host=bind, port=port, log_level="info")
     return 0
 
 
