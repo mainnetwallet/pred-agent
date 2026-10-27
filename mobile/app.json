@@ -1,0 +1,20 @@
+{
+  "expo": {
+    "name": "PRED Agent",
+    "slug": "pred-agent",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "android": {
+      "package": "com.mainnetwallet.predagent"
+    },
+    "ios": {
+      "bundleIdentifier": "com.mainnetwallet.predagent"
+    },
+    "plugins": [
+      "expo-secure-store",
+      "expo-local-authentication",
+      "expo-notifications"
+    ]
+  }
+}

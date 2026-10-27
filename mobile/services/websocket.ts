@@ -115,7 +115,7 @@ export class ControlWebSocket extends (EventEmitter as new () => EventEmitter) {
     this.on("disconnect", handler);
   }
 
-  onEvent<T extends WsEvent["type"]>(type: T, handler: (data: WsEvent & { type: T })["data"] => void) {
+  onEvent<T extends WsEvent["type"]>(type: T, handler: (data: (WsEvent & { type: T })["data"]) => void) {
     this.on(type, handler);
   }
 
