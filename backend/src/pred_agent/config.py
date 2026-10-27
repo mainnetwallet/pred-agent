@@ -48,7 +48,6 @@ class Settings(BaseSettings):
     llm_api_key: str | None = None
     llm_model: str | None = None
     llm_base_url: str = "https://api.openai.com/v1"
-    llm_daily_max_calls: int = 0  # 0 = unlimited
     telegram_bot_token: str | None = None
     telegram_allowed_user_id: str | None = None
     odds_api_key: str | None = None

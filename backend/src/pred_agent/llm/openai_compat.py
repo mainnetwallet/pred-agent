@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import json
 import logging
-import time
 from typing import Any
 
 import httpx
@@ -90,27 +89,14 @@ class OpenAICompatClient(LLMClient):
         api_key: str,
         model: str,
         base_url: str,
-        daily_max_calls: int = 0,
-        timeout: float = 600.0,
+        timeout: float | None = None,  # None = no timeout
         transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
         self._api_key = api_key
         self.model = model
         self.base_url = _normalize_base(base_url)
-        self._daily_max = daily_max_calls
         self._timeout = timeout
         self._transport = transport
-        self._day = time.strftime("%Y-%m-%d", time.gmtime())
-        self._calls = 0
-
-    def _budget_ok(self) -> bool:
-        today = time.strftime("%Y-%m-%d", time.gmtime())
-        if today != self._day:
-            self._day, self._calls = today, 0
-        if self._daily_max > 0 and self._calls >= self._daily_max:
-            return False
-        self._calls += 1
-        return True
 
     async def _post(self, client: httpx.AsyncClient, body: dict[str, Any]) -> httpx.Response:
         return await client.post(
@@ -120,9 +106,6 @@ class OpenAICompatClient(LLMClient):
         )
 
     async def complete(self, request: LLMRequest) -> LLMResponse:
-        if not self._budget_ok():
-            log.warning("llm daily call cap reached")
-            return LLMResponse(content="", valid=False, error="daily call cap reached")
         body: dict[str, Any] = {
             "model": self.model,
             "messages": [
@@ -132,8 +115,6 @@ class OpenAICompatClient(LLMClient):
             "temperature": request.temperature,
             "response_format": {"type": "json_object"},
         }
-        if request.max_tokens is not None:  # only sent when a caller explicitly asks
-            body["max_tokens"] = request.max_tokens
         try:
             async with httpx.AsyncClient(timeout=self._timeout, transport=self._transport) as c:
                 resp = await self._post(c, body)
@@ -155,7 +136,7 @@ class OpenAICompatClient(LLMClient):
                 content = msg.get("reasoning_content") or ""
             if not content.strip():
                 reason = choice.get("finish_reason")
-                hint = " (raise max_tokens)" if reason == "length" else ""
+                hint = " (provider cut the reply off)" if reason == "length" else ""
                 log.warning("llm empty content, finish_reason=%s", reason)
                 return LLMResponse(content="", valid=False,
                                    error=f"empty reply, finish_reason={reason}{hint}")
@@ -179,6 +160,5 @@ def build_llm_client(settings: Settings) -> LLMClient:
             api_key=settings.llm_api_key,
             model=settings.llm_model,
             base_url=settings.llm_base_url,
-            daily_max_calls=settings.llm_daily_max_calls,
         )
     return DummyLLMClient()

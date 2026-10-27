@@ -6,7 +6,7 @@ kit/05_STRATEGY_AND_RISK.md section 1 (LLM adjustment).
 Rules:
 - Provider and model come from config; no hardcoded model names.
 - Structured JSON output with schema validation.
-- Daily budget cap.
+- No token, call, or time limits are imposed by this client.
 - No secrets ever in prompts.
 - Invalid LLM output means adjustment 0 (fail closed).
 """
@@ -24,7 +24,6 @@ class LLMRequest:
     user_prompt: str
     response_schema: dict[str, Any]  # JSON Schema for the expected output
     temperature: float = 0.0
-    max_tokens: int | None = None  # None = no cap; the provider decides
 
 
 @dataclass
