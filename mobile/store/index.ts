@@ -5,6 +5,7 @@ import { persist, createJSONStorage } from "zustand/middleware";
 import * as SecureStore from "expo-secure-store";
 import { Mode, StatusResponse, Proposal, Order, Position, Device } from "../types/api";
 import { DEFAULT_SERVER_URL } from "../utils/defaults";
+import { api } from "../services/api";
 
 // SecureStore driver for zustand persist
 const secureStorage = {
@@ -38,6 +39,7 @@ export interface AuthStore {
   setToken: (token: string | null) => void;
   setServerUrl: (url: string) => void;
   clearToken: () => void;
+  logout: () => Promise<void>;
 }
 
 export const useAuthStore = create<AuthStore>()(
@@ -49,6 +51,15 @@ export const useAuthStore = create<AuthStore>()(
       setToken: (token) => set({ deviceToken: token, isAuthenticated: !!token }),
       setServerUrl: (url) => set({ serverUrl: url }),
       clearToken: () => set({ deviceToken: null, isAuthenticated: false }),
+      logout: async () => {
+        // Revoke on the server first (ignore failures: offline logout must still work).
+        try {
+          await api.logout();
+        } catch {
+          // ignore
+        }
+        set({ deviceToken: null, isAuthenticated: false });
+      },
     }),
     {
       name: "auth-storage",

@@ -31,8 +31,9 @@ class LoginManager:
         secret: str | None,
         ttl_hours: int = 24,
     ) -> None:
-        self._username = username
-        self._password = password
+        # Env values pasted into a dashboard often carry a trailing space/newline.
+        self._username = username.strip()
+        self._password = password.strip() if password else password
         self._ttl = max(1, ttl_hours) * 3600
         if secret:
             key_src = secret.encode()
@@ -43,6 +44,7 @@ class LoginManager:
             key_src = secrets.token_bytes(32)
         self._key = hashlib.sha256(b"pred-agent-hmac|" + key_src).digest()
         self._fails: dict[str, tuple[int, float]] = {}
+        self._revoked: dict[str, int] = {}  # token nonce -> token expiry (logged-out tokens)
 
     @property
     def enabled(self) -> bool:
@@ -66,8 +68,9 @@ class LoginManager:
     def login(self, username: str, password: str, client: str = "?") -> str | None:
         if not self.enabled or self.locked_for(client):
             return None
-        user_ok = hmac.compare_digest(username.encode(), self._username.encode())
-        pass_ok = hmac.compare_digest(password.encode(), (self._password or "").encode())
+        # Phone keyboards/autofill often add a trailing space: ignore surrounding whitespace.
+        user_ok = hmac.compare_digest(username.strip().encode(), self._username.encode())
+        pass_ok = hmac.compare_digest(password.strip().encode(), (self._password or "").encode())
         if not (user_ok and pass_ok):
             self._record_fail(client)
             return None
@@ -99,5 +102,20 @@ class LoginManager:
             return None
         if not isinstance(body, dict) or int(body.get("exp", 0)) < time.time():
             return None
+        if str(body.get("n", "")) in self._revoked:
+            return None
         user = body.get("u")
         return user if isinstance(user, str) else None
+
+    def logout(self, token: str) -> bool:
+        """Invalidate one session token (server-side logout). Returns True if it was valid."""
+        if self.verify(token) is None:
+            return False
+        _, payload, _ = token.split(".")
+        padded = payload + "=" * (-len(payload) % 4)
+        body = json.loads(base64.urlsafe_b64decode(padded))
+        now = time.time()
+        # Forget revocations of tokens that have expired anyway.
+        self._revoked = {n: exp for n, exp in self._revoked.items() if exp >= now}
+        self._revoked[str(body.get("n", ""))] = int(body.get("exp", 0))
+        return True

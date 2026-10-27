@@ -103,10 +103,19 @@ function el(tag, props, ...kids) {
 async function api(path, opts = {}) {
   const headers = { "Content-Type": "application/json" };
   if (token) headers.Authorization = "Bearer " + token;
-  const resp = await fetch(path, { ...opts, headers });
+  let resp;
+  try {
+    resp = await fetch(path, { ...opts, headers });
+  } catch (_) {
+    return { ok: false, error: { code: "network", message: "Cannot reach the server. Check your connection." } };
+  }
   let body = {};
   try { body = await resp.json(); } catch (_) {}
-  if (resp.status === 401 && token) { signOut(); }
+  // A wrong password on /v1/login is a 401 too; only a rejected *session* signs us out.
+  if (resp.status === 401 && token && path !== "/v1/login") { signOut(); }
+  if (!body || typeof body !== "object") body = {};
+  if (!resp.ok && !body.error) body.error = { code: "http_error", message: "HTTP " + resp.status };
+  if (!resp.ok) body.ok = false;
   return body;
 }
 
@@ -114,8 +123,19 @@ function signOut() {
   token = null;
   localStorage.removeItem("pred_token");
   clearInterval(timer);
+  $("p").value = "";
+  $("loginErr").textContent = "";
   $("app").classList.add("hidden");
   $("login").classList.remove("hidden");
+}
+
+async function logout() {
+  // Tell the server to invalidate the token, then drop it locally either way.
+  const t = token;
+  if (t) {
+    try { await fetch("/v1/logout", { method: "POST", headers: { Authorization: "Bearer " + t } }); } catch (_) {}
+  }
+  signOut();
 }
 
 function showApp() {
@@ -127,23 +147,35 @@ function showApp() {
 }
 
 $("loginBtn").onclick = async () => {
+  const btn = $("loginBtn");
   $("loginErr").textContent = "";
-  const r = await api("/v1/login", {
-    method: "POST",
-    body: JSON.stringify({ username: $("u").value, password: $("p").value }),
-  });
-  if (r.ok) {
-    token = r.data.token;
-    localStorage.setItem("pred_token", token);
-    $("p").value = "";
-    showApp();
-    loadLlm();
-  } else {
-    $("loginErr").textContent = (r.error && r.error.message) || "Login failed";
+  const username = $("u").value.trim();
+  const password = $("p").value;
+  if (!username || !password) { $("loginErr").textContent = "Enter username and password"; return; }
+  btn.disabled = true;
+  btn.textContent = "Signing in...";
+  try {
+    const r = await api("/v1/login", {
+      method: "POST",
+      body: JSON.stringify({ username, password }),
+    });
+    if (r.ok && r.data && r.data.token) {
+      token = r.data.token;
+      localStorage.setItem("pred_token", token);
+      $("p").value = "";
+      showApp();
+      loadLlm();
+    } else {
+      $("loginErr").textContent = (r.error && r.error.message) || "Login failed";
+    }
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Sign in";
   }
 };
 $("p").addEventListener("keydown", (e) => { if (e.key === "Enter") $("loginBtn").click(); });
-$("logout").onclick = signOut;
+$("u").addEventListener("keydown", (e) => { if (e.key === "Enter") $("p").focus(); });
+$("logout").onclick = logout;
 
 async function act(path, confirmText) {
   if (confirmText && !confirm(confirmText)) return;

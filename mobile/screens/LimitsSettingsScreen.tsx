@@ -22,7 +22,7 @@ export const LimitsSettingsScreen: React.FC = () => {
   const styles = useThemedStyles(makeStyles);
   const { mode, paused } = useUIStore();
   const { devices, setDevices } = useDevicesStore();
-  const { clearToken } = useAuthStore();
+  const { logout } = useAuthStore();
   const [limits, setLimits] = useState<any[]>([]);
   const [editing, setEditing] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
@@ -169,7 +169,7 @@ export const LimitsSettingsScreen: React.FC = () => {
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Account</Text>
-          <TouchableOpacity style={styles.actionButton} onPress={clearToken}>
+          <TouchableOpacity style={styles.actionButton} onPress={logout}>
             <Text style={styles.actionButtonText}>Log out</Text>
           </TouchableOpacity>
         </View>

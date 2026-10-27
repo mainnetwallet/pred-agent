@@ -183,6 +183,20 @@ def create_app() -> FastAPI:
             return error_response("invalid_credentials", "wrong username or password", 401)
         return envelope(ok=True, data={"token": token, "expires_in": settings.session_ttl_hours * 3600})
 
+    @app.post("/v1/logout")
+    async def logout(authorization: str | None = Header(None)) -> Any:
+        if not authorization or not authorization.startswith("Bearer "):
+            return _unauth()
+        token = authorization[len("Bearer "):]
+        if login_mgr.logout(token):
+            return envelope(ok=True, data={"logged_out": True})
+        # Paired-device tokens: revoke the device. Anything else is not logged in.
+        device_id = auth.verify_token(token)
+        if device_id is None:
+            return _unauth()
+        auth.revoke_device(device_id)
+        return envelope(ok=True, data={"logged_out": True})
+
     @app.get("/v1/me")
     async def me(authorization: str | None = Header(None)) -> Any:
         who = _verify_auth(authorization)

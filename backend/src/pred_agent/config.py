@@ -111,6 +111,21 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
+    @field_validator("admin_username", mode="before")
+    @classmethod
+    def _strip_admin_username(cls, v: Any) -> Any:
+        # A space/newline pasted into the Render dashboard must not break login.
+        if isinstance(v, str):
+            return v.strip() or "admin"
+        return v
+
+    @field_validator("admin_password", mode="before")
+    @classmethod
+    def _strip_admin_password(cls, v: Any) -> Any:
+        if isinstance(v, str):
+            return v.strip() or None
+        return v
+
     @field_validator("private_key")
     @classmethod
     def _validate_private_key(cls, v: str | None) -> str | None:

@@ -188,6 +188,11 @@ class ApiClient {
     });
   }
 
+  // Invalidates the session token on the server (best effort; caller clears local state).
+  async logout(): Promise<ApiEnvelope<{ logged_out: boolean }>> {
+    return this.request<{ logged_out: boolean }>("/v1/logout", { method: "POST" });
+  }
+
   // ---- Pairing (legacy) ----
   async pair(code: string, deviceName: string, devicePublicKey: string): Promise<ApiEnvelope<{ device_token: string }>> {
     return this.request<{ device_token: string }>("/v1/pair", {

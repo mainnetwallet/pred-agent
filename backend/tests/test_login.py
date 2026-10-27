@@ -164,3 +164,47 @@ def test_telegram_builds_with_env(monkeypatch):
     monkeypatch.setenv("TELEGRAM_ALLOWED_USER_ID", "42")
     s = load_settings()
     assert build_application(s, AgentController(s)) is not None
+
+
+def test_logout_revokes_token(client):
+    h = _hdr(client)
+    assert client.get("/v1/status", headers=h).status_code == 200
+    assert client.post("/v1/logout", headers=h).status_code == 200
+    # the same token no longer works anywhere
+    assert client.get("/v1/status", headers=h).status_code == 401
+    assert client.get("/v1/me", headers=h).status_code == 401
+    # logging out again / without a token is rejected
+    assert client.post("/v1/logout", headers=h).status_code == 401
+    assert client.post("/v1/logout").status_code == 401
+    # a fresh login still works, and other sessions are unaffected
+    assert _login(client).status_code == 200
+
+
+def test_logout_only_kills_that_session(client):
+    h1, h2 = _hdr(client), _hdr(client)
+    client.post("/v1/logout", headers=h1)
+    assert client.get("/v1/status", headers=h1).status_code == 401
+    assert client.get("/v1/status", headers=h2).status_code == 200
+
+
+def test_login_ignores_surrounding_whitespace(client):
+    assert _login(client, user=" boss ", pw="s3cret-pass ").status_code == 200
+
+
+def test_env_credentials_with_trailing_whitespace(monkeypatch):
+    monkeypatch.setenv("ADMIN_USERNAME", "boss\n")
+    monkeypatch.setenv("ADMIN_PASSWORD", "s3cret-pass \n")
+    monkeypatch.setenv("SESSION_SECRET", "unit-test-secret")
+    monkeypatch.delenv("TELEGRAM_BOT_TOKEN", raising=False)
+    monkeypatch.delenv("TELEGRAM_ALLOWED_USER_ID", raising=False)
+    c = TestClient(create_app())
+    assert c.post("/v1/login", json={"username": "boss", "password": "s3cret-pass"}).status_code == 200
+
+
+def test_blank_env_username_falls_back_to_admin(monkeypatch):
+    monkeypatch.setenv("ADMIN_USERNAME", "  ")
+    monkeypatch.setenv("ADMIN_PASSWORD", "pw")
+    monkeypatch.delenv("TELEGRAM_BOT_TOKEN", raising=False)
+    monkeypatch.delenv("TELEGRAM_ALLOWED_USER_ID", raising=False)
+    c = TestClient(create_app())
+    assert c.post("/v1/login", json={"username": "admin", "password": "pw"}).status_code == 200

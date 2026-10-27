@@ -8,8 +8,11 @@ import {
   FlatList,
   StyleSheet,
   ActivityIndicator,
+  TouchableOpacity,
+  Alert,
 } from "react-native";
-import { useUIStore, useProposalsStore } from "../store/index";
+import { useNavigation } from "@react-navigation/native";
+import { useUIStore, useProposalsStore, useAuthStore } from "../store/index";
 import { Colors, useTheme, useThemedStyles } from "../utils/theme";
 import { api } from "../services/api";
 import { StatusBanner, MoneyDisplay, OfflineBadge } from "../components/common";
@@ -20,6 +23,15 @@ export const HomeScreen: React.FC = () => {
   const { setStatus, mode, paused, feedsOk, balance, exposure, dailyPnl } = useUIStore();
   const { proposals, setProposals } = useProposalsStore();
   const [refreshing, setRefreshing] = useState(false);
+  const navigation = useNavigation<any>();
+  const { logout } = useAuthStore();
+
+  const confirmLogout = () => {
+    Alert.alert("Log out", "Sign out of this device?", [
+      { text: "Cancel", style: "cancel" },
+      { text: "Log out", style: "destructive", onPress: () => void logout() },
+    ]);
+  };
 
   useEffect(() => {
     loadData();
@@ -49,6 +61,20 @@ export const HomeScreen: React.FC = () => {
     <View style={styles.container}>
       <StatusBanner mode={mode} paused={paused} />
       <View style={styles.content}>
+        <View style={styles.navRow}>
+          <TouchableOpacity style={styles.navButton} onPress={() => navigation.navigate("Proposals")}>
+            <Text style={styles.navText}>Proposals</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.navButton} onPress={() => navigation.navigate("LimitsSettings")}>
+            <Text style={styles.navText}>Limits</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.navButton} onPress={() => navigation.navigate("Panic")}>
+            <Text style={styles.navText}>Panic</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.navButton} onPress={confirmLogout}>
+            <Text style={styles.navText}>Log out</Text>
+          </TouchableOpacity>
+        </View>
         <View style={styles.statsRow}>
           <MoneyDisplay amount={balance} label="Balance" />
           <MoneyDisplay amount={exposure} label="Exposure" />
@@ -93,6 +119,25 @@ const makeStyles = (c: Colors) => StyleSheet.create({
   },
   content: {
     padding: 16,
+  },
+  navRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginBottom: 16,
+  },
+  navButton: {
+    borderWidth: 1,
+    borderColor: c.border,
+    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    backgroundColor: c.surface,
+  },
+  navText: {
+    color: c.text,
+    fontSize: 14,
+    fontWeight: "600",
   },
   statsRow: {
     flexDirection: "row",
