@@ -381,8 +381,8 @@ class ChatLLM:
 
                     content_parts: list[str] = []
                     calls: dict[int, dict[str, Any]] = {}
-                    async for line in resp.aiter_lines():
-                        line = line.strip()
+                    async for raw_line in resp.aiter_lines():
+                        line = raw_line.strip()
                         if not line.startswith("data:"):
                             continue
                         payload = line[5:].strip()
