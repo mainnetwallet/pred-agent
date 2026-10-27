@@ -77,6 +77,13 @@
 
     <h2>Limits</h2>
     <div id="limits" class="card"></div>
+
+    <h2>LLM</h2>
+    <div class="card row">
+      <span id="llmInfo" class="grow mut">-</span>
+      <button id="llmTest">Test LLM</button>
+    </div>
+    <p id="llmMsg" class="mut"></p>
   </section>
 </main>
 
@@ -130,6 +137,7 @@ $("loginBtn").onclick = async () => {
     localStorage.setItem("pred_token", token);
     $("p").value = "";
     showApp();
+    loadLlm();
   } else {
     $("loginErr").textContent = (r.error && r.error.message) || "Login failed";
   }
@@ -211,7 +219,20 @@ async function refresh() {
     el("span", { className: "mut", textContent: "max " + l.hard_max }))));
 }
 
-if (token) { showApp(); } else { $("login").classList.remove("hidden"); }
+async function loadLlm() {
+  const r = await api("/v1/llm");
+  if (!r.ok) return;
+  $("llmInfo").textContent = r.data.configured
+    ? `${r.data.model} @ ${r.data.base_url}` : "Not configured (set LLM_API_KEY and LLM_MODEL)";
+}
+$("llmTest").onclick = async () => {
+  $("llmMsg").textContent = "Testing...";
+  const r = await api("/v1/llm/test", { method: "POST", body: "{}" });
+  $("llmMsg").textContent = r.ok ? "LLM OK: " + JSON.stringify(r.data.reply)
+    : ((r.error && r.error.message) || "LLM test failed");
+};
+
+if (token) { showApp(); loadLlm(); } else { $("login").classList.remove("hidden"); }
 </script>
 </body>
 </html>
