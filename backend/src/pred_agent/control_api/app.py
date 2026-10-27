@@ -375,6 +375,16 @@ def create_app(*, background: bool = False) -> FastAPI:  # noqa: PLR0915
     def _unauth() -> JSONResponse:
         return error_response("unauthorized", "invalid or missing token", 401)
 
+    def _require_xconfirm(x_confirm: str | None) -> JSONResponse | None:
+        """LIVE mode: risky actions require the X-Confirm header — proof the
+        human passed the client's confirmation gate (biometric on mobile,
+        confirm() dialog on the website). PAPER mode never requires it."""
+        if controller.mode != "LIVE":
+            return None
+        if x_confirm:
+            return None
+        return error_response("xconfirm_required", "LIVE mode: X-Confirm header required", 403)
+
     def _client_key(request: Request) -> str:
         fwd = request.headers.get("x-forwarded-for")
         if fwd:
@@ -826,9 +836,13 @@ def create_app(*, background: bool = False) -> FastAPI:  # noqa: PLR0915
         return envelope(ok=True, data=controller.status())
 
     @app.post("/v1/panic")
-    async def panic(authorization: str | None = Header(None)) -> Any:
+    async def panic(authorization: str | None = Header(None),
+                    x_confirm: str | None = Header(None, alias="X-Confirm")) -> Any:
         if _verify_auth(authorization) is None:
             return _unauth()
+        gate = _require_xconfirm(x_confirm)
+        if gate is not None:
+            return gate
         result = controller.panic()
         await bus.publish(Event("status_update", {"paused": True, **result}))
         return envelope(ok=True, data={**controller.status(), **result})
@@ -843,9 +857,13 @@ def create_app(*, background: bool = False) -> FastAPI:  # noqa: PLR0915
 
     @app.post("/v1/proposals/{proposal_id}/approve")
     async def approve(proposal_id: str, body: dict[str, Any] | None = None,
-                      authorization: str | None = Header(None)) -> Any:
+                      authorization: str | None = Header(None),
+                      x_confirm: str | None = Header(None, alias="X-Confirm")) -> Any:
         if _verify_auth(authorization) is None:
             return _unauth()
+        gate = _require_xconfirm(x_confirm)
+        if gate is not None:
+            return gate
         amount: Decimal | None = None
         raw = (body or {}).get("amount_usd")
         if raw not in (None, ""):
@@ -882,9 +900,13 @@ def create_app(*, background: bool = False) -> FastAPI:  # noqa: PLR0915
         return envelope(ok=True, data=controller.orders())
 
     @app.post("/v1/orders/{order_id}/cancel")
-    async def cancel_order(order_id: str, authorization: str | None = Header(None)) -> Any:
+    async def cancel_order(order_id: str, authorization: str | None = Header(None),
+                           x_confirm: str | None = Header(None, alias="X-Confirm")) -> Any:
         if _verify_auth(authorization) is None:
             return _unauth()
+        gate = _require_xconfirm(x_confirm)
+        if gate is not None:
+            return gate
         ok = controller.executor.cancel(order_id)
         if not ok:
             return error_response("not_found", "order not found or not cancellable", 404)
@@ -897,9 +919,13 @@ def create_app(*, background: bool = False) -> FastAPI:  # noqa: PLR0915
         return envelope(ok=True, data=controller.positions_list())
 
     @app.post("/v1/positions/{market_id}/close")
-    async def close_position(market_id: str, authorization: str | None = Header(None)) -> Any:
+    async def close_position(market_id: str, authorization: str | None = Header(None),
+                             x_confirm: str | None = Header(None, alias="X-Confirm")) -> Any:
         if _verify_auth(authorization) is None:
             return _unauth()
+        gate = _require_xconfirm(x_confirm)
+        if gate is not None:
+            return gate
         prop, err = controller.close_position_proposal(market_id, via="app")
         if prop is None:
             return error_response("not_found", err or "position not found", 404)
@@ -987,9 +1013,13 @@ def create_app(*, background: bool = False) -> FastAPI:  # noqa: PLR0915
         return envelope(ok=True, data=[r.to_dict() for r in rules])
 
     @app.post("/v1/rules/{rule_id}/confirm")
-    async def confirm_rule(rule_id: str, authorization: str | None = Header(None)) -> Any:
+    async def confirm_rule(rule_id: str, authorization: str | None = Header(None),
+                           x_confirm: str | None = Header(None, alias="X-Confirm")) -> Any:
         if _verify_auth(authorization) is None:
             return _unauth()
+        gate = _require_xconfirm(x_confirm)
+        if gate is not None:
+            return gate
         rule = controller.confirm_rule(rule_id)
         if rule is None:
             return error_response("not_confirmable", "rule not found, not PENDING, or max active rules reached", 409)

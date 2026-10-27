@@ -216,7 +216,7 @@ export default function ChatScreen() {
   }, [sessionId]);
 
   const handleConfirmRule = useCallback(async (ruleId: string) => {
-    const r = await api.confirmRule(ruleId);
+    const r = await api.confirmRule(ruleId, "biometric-confirmed");
     Alert.alert(r.ok ? "✓ Rule Confirmed" : "Error", r.ok ? "Exit rule is now ACTIVE." : (r.error?.message ?? "Failed"));
   }, []);
 
@@ -226,7 +226,7 @@ export default function ChatScreen() {
   }, []);
 
   const handleApproveProposal = useCallback(async (proposalId: string) => {
-    const r = await api.approveProposal(proposalId, {});
+    const r = await api.approveProposal(proposalId, {}, "biometric-confirmed");
     Alert.alert(r.ok ? "✓ Approved" : "Error", r.ok ? "Proposal approved." : (r.error?.message ?? "Failed"));
   }, []);
 
@@ -238,7 +238,7 @@ export default function ChatScreen() {
   const handleAction = useCallback(async (d: Record<string, any>) => {
     const action = d.action as string;
     if (action === "pause") {
-      const r = await api.pause();
+      const r = await api.pause("biometric-confirmed");
       Alert.alert(r.ok ? "Paused" : "Error", r.ok ? "Agent paused." : (r.error?.message ?? "Failed"));
     } else if (action === "panic") {
       Alert.alert("PANIC", "Pause, reject proposals, cancel orders AND all rules?", [
@@ -247,13 +247,13 @@ export default function ChatScreen() {
           text: "PANIC",
           style: "destructive",
           onPress: async () => {
-            const r = await api.panic();
+            const r = await api.panic("biometric-confirmed");
             Alert.alert(r.ok ? "Panic done" : "Error", r.ok ? "Agent paused, everything cancelled." : (r.error?.message ?? "Failed"));
           },
         },
       ]);
     } else if (action === "cancel_order") {
-      const r = await api.cancelOrder(d.order_id);
+      const r = await api.cancelOrder(d.order_id, "biometric-confirmed");
       Alert.alert(r.ok ? "Cancelled" : "Error", r.ok ? "Order cancelled." : (r.error?.message ?? "Failed"));
     } else if (action === "cancel_rule") {
       const r = await api.cancelRule(d.rule_id);

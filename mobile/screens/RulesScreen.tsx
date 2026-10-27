@@ -90,7 +90,7 @@ export default function RulesScreen() {
         {
           text: "Confirm Rule",
           onPress: async () => {
-            const r = await api.confirmRule(rule.id);
+            const r = await api.confirmRule(rule.id, "biometric-confirmed");
             if (r.ok) {
               Alert.alert("✓ Confirmed", "Rule is now ACTIVE.");
               load();

@@ -274,6 +274,12 @@ $("u").addEventListener("keydown", (e) => { if (e.key === "Enter") $("p").focus(
 $("logout").onclick = logout;
 
 // ── Dashboard actions ────────────────────────────────────────
+// confirmHeader(): the website's human confirmation gate. Returns the
+// X-Confirm headers after the operator confirms, or null if cancelled.
+function confirmHeader(msg) {
+  if (!confirm(msg)) return null;
+  return { "X-Confirm": "web-confirm" };
+}
 async function act(path, confirmText) {
   if (confirmText && !confirm(confirmText)) return;
   const r = await api(path, { method: "POST", body: "{}" });
@@ -282,7 +288,13 @@ async function act(path, confirmText) {
 }
 $("pauseBtn").onclick = () => act("/v1/pause");
 $("resumeBtn").onclick = () => act("/v1/resume");
-$("panicBtn").onclick = () => act("/v1/panic", "PANIC: pause, reject proposals, cancel orders AND rules?");
+$("panicBtn").onclick = async () => {
+  const h = confirmHeader("PANIC: pause, reject proposals, cancel orders AND rules?");
+  if (!h) return;
+  const r = await api("/v1/panic", { method: "POST", body: "{}", headers: h });
+  $("msg").textContent = r.ok ? "" : ((r.error && r.error.message) || "Failed");
+  refresh();
+};
 
 function usd(v) { const n = Number(v); return isNaN(n) ? "-" : "$" + n.toFixed(2); }
 
@@ -307,7 +319,9 @@ function proposalCard(p) {
     const ok = el("button", { className: "ok", textContent: "Approve" });
     const no = el("button", { className: "bad", textContent: "Reject" });
     ok.onclick = async () => {
-      const r = await api(`/v1/proposals/${p.id}/approve`, { method: "POST", body: JSON.stringify(amt.value ? { amount_usd: amt.value } : {}) });
+      const h = confirmHeader("Approve this trade proposal?");
+      if (!h) return;
+      const r = await api(`/v1/proposals/${p.id}/approve`, { method: "POST", body: JSON.stringify(amt.value ? { amount_usd: amt.value } : {}), headers: h });
       $("msg").textContent = r.ok ? "" : ((r.error && r.error.message) || "Failed");
       refresh();
     };
@@ -418,7 +432,9 @@ async function loadRules(status) {
     if (rule.status === "PENDING") {
       const confirmBtn = el("button", { className: "ok", textContent: "Confirm Rule" });
       confirmBtn.onclick = async () => {
-        const res = await api(`/v1/rules/${rule.id}/confirm`, { method: "POST", body: "{}" });
+        const h = confirmHeader("Confirm this exit rule?");
+        if (!h) return;
+        const res = await api(`/v1/rules/${rule.id}/confirm`, { method: "POST", body: "{}", headers: h });
         $("msg").textContent = res.ok ? "" : ((res.error && res.error.message) || "Failed");
         loadRules(null);
       };
@@ -481,7 +497,9 @@ function renderCard(card) {
       const actions = el("div", { className: "card-actions" });
       const confirmBtn = el("button", { className: "ok", textContent: "✓ Confirm Rule" });
       confirmBtn.onclick = async () => {
-        const r = await api(`/v1/rules/${d.id}/confirm`, { method: "POST", body: "{}" });
+        const h = confirmHeader("Confirm this exit rule?");
+        if (!h) return;
+        const r = await api(`/v1/rules/${d.id}/confirm`, { method: "POST", body: "{}", headers: h });
         confirmBtn.disabled = true;
         confirmBtn.textContent = r.ok ? "Confirmed ✓" : "Failed";
         if (r.ok) loadRules(null);
@@ -504,7 +522,9 @@ function renderCard(card) {
       const actions = el("div", { className: "card-actions" });
       const okBtn = el("button", { className: "ok", textContent: "✓ Approve" });
       okBtn.onclick = async () => {
-        const r = await api(`/v1/proposals/${d.id}/approve`, { method: "POST", body: "{}" });
+        const h = confirmHeader("Approve this trade proposal?");
+        if (!h) return;
+        const r = await api(`/v1/proposals/${d.id}/approve`, { method: "POST", body: "{}", headers: h });
         okBtn.disabled = true;
         okBtn.textContent = r.ok ? "Approved ✓" : "Failed";
         if (r.ok) refresh();
@@ -526,16 +546,14 @@ function renderCard(card) {
     const actions = el("div", { className: "card-actions" });
     const goBtn = el("button", { className: "bad", textContent: "Confirm" });
     goBtn.onclick = async () => {
+      const h = confirmHeader(d.label || "Confirm this action?");
+      if (!h) return;
       let r;
-      if (d.action === "pause") r = await api("/v1/pause", { method: "POST", body: "{}" });
-      else if (d.action === "panic") {
-        if (!confirm("PANIC: pause, reject proposals, cancel orders AND rules?")) return;
-        r = await api("/v1/panic", { method: "POST", body: "{}" });
-      } else if (d.action === "cancel_order") {
-        r = await api(`/v1/orders/${d.order_id}/cancel`, { method: "POST", body: "{}" });
-      } else if (d.action === "cancel_rule") {
-        r = await api(`/v1/rules/${d.rule_id}/cancel`, { method: "POST", body: "{}" });
-      } else return;
+      if (d.action === "pause") r = await api("/v1/pause", { method: "POST", body: "{}", headers: h });
+      else if (d.action === "panic") r = await api("/v1/panic", { method: "POST", body: "{}", headers: h });
+      else if (d.action === "cancel_order") r = await api(`/v1/orders/${d.order_id}/cancel`, { method: "POST", body: "{}", headers: h });
+      else if (d.action === "cancel_rule") r = await api(`/v1/rules/${d.rule_id}/cancel`, { method: "POST", body: "{}", headers: h });
+      else return;
       goBtn.disabled = true;
       goBtn.textContent = r.ok ? "Done ✓" : "Failed";
       refresh();

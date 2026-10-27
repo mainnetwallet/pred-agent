@@ -490,6 +490,22 @@
               ],
               "title": "Authorization"
             }
+          },
+          {
+            "name": "X-Confirm",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Confirm"
+            }
           }
         ],
         "responses": {
@@ -606,6 +622,22 @@
                 }
               ],
               "title": "Authorization"
+            }
+          },
+          {
+            "name": "X-Confirm",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Confirm"
             }
           }
         ],
@@ -781,6 +813,22 @@
               ],
               "title": "Authorization"
             }
+          },
+          {
+            "name": "X-Confirm",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Confirm"
+            }
           }
         ],
         "responses": {
@@ -881,6 +929,22 @@
                 }
               ],
               "title": "Authorization"
+            }
+          },
+          {
+            "name": "X-Confirm",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Confirm"
             }
           }
         ],
@@ -1309,6 +1373,22 @@
                 }
               ],
               "title": "Authorization"
+            }
+          },
+          {
+            "name": "X-Confirm",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Confirm"
             }
           }
         ],
