@@ -78,6 +78,20 @@ async def test_retries_without_response_format():
 
 
 @pytest.mark.asyncio
+async def test_no_max_tokens_by_default_and_unlimited_calls():
+    bodies = []
+
+    def handler(request):
+        bodies.append(json.loads(request.content))
+        return _reply('{"adj": 1}')
+
+    c = _client(handler)
+    for _ in range(3):
+        assert (await c.complete(REQ)).valid
+    assert all("max_tokens" not in b for b in bodies)
+
+
+@pytest.mark.asyncio
 async def test_daily_cap():
     c = _client(lambda r: _reply('{"adj": 1}'), daily_max_calls=1)
     assert (await c.complete(REQ)).valid

@@ -321,7 +321,6 @@ def create_app() -> FastAPI:
             system_prompt="Reply with JSON only.",
             user_prompt='Return {"ok": true}.',
             response_schema={"type": "object", "required": ["ok"], "properties": {"ok": {"type": "boolean"}}},
-            max_tokens=512,  # reasoning models need headroom beyond the tiny JSON reply
         ))
         if not res.valid:
             why = f": {res.error}" if res.error else ""

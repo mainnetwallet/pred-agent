@@ -24,7 +24,7 @@ class LLMRequest:
     user_prompt: str
     response_schema: dict[str, Any]  # JSON Schema for the expected output
     temperature: float = 0.0
-    max_tokens: int = 500
+    max_tokens: int | None = None  # None = no cap; the provider decides
 
 
 @dataclass

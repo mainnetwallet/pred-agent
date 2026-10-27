@@ -90,8 +90,8 @@ class OpenAICompatClient(LLMClient):
         api_key: str,
         model: str,
         base_url: str,
-        daily_max_calls: int = 200,
-        timeout: float = 60.0,
+        daily_max_calls: int = 0,
+        timeout: float = 600.0,
         transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
         self._api_key = api_key
@@ -107,7 +107,7 @@ class OpenAICompatClient(LLMClient):
         today = time.strftime("%Y-%m-%d", time.gmtime())
         if today != self._day:
             self._day, self._calls = today, 0
-        if self._calls >= self._daily_max:
+        if self._daily_max > 0 and self._calls >= self._daily_max:
             return False
         self._calls += 1
         return True
@@ -130,9 +130,10 @@ class OpenAICompatClient(LLMClient):
                 {"role": "user", "content": request.user_prompt},
             ],
             "temperature": request.temperature,
-            "max_tokens": request.max_tokens,
             "response_format": {"type": "json_object"},
         }
+        if request.max_tokens is not None:  # only sent when a caller explicitly asks
+            body["max_tokens"] = request.max_tokens
         try:
             async with httpx.AsyncClient(timeout=self._timeout, transport=self._transport) as c:
                 resp = await self._post(c, body)
