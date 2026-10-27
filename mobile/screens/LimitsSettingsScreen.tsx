@@ -12,11 +12,14 @@ import {
 } from "react-native";
 import * as LocalAuthentication from "expo-local-authentication";
 import { useUIStore, useDevicesStore, useAuthStore } from "../store/index";
+import { Colors, useTheme, useThemedStyles } from "../utils/theme";
 import { api } from "../services/api";
 import { StatusBanner } from "../components/common";
 import { formatUsd } from "../utils/format";
 
 export const LimitsSettingsScreen: React.FC = () => {
+  const c = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const { mode, paused } = useUIStore();
   const { devices, setDevices } = useDevicesStore();
   const { clearToken } = useAuthStore();
@@ -117,6 +120,8 @@ export const LimitsSettingsScreen: React.FC = () => {
               {editing === limit.name ? (
                 <View style={styles.editRow}>
                   <TextInput
+                    placeholderTextColor={c.placeholder}
+                    keyboardAppearance={c.isDark ? "dark" : "light"}
                     style={styles.editInput}
                     value={editValue}
                     onChangeText={setEditValue}
@@ -189,26 +194,27 @@ export const LimitsSettingsScreen: React.FC = () => {
   );
 };
 
-const styles = StyleSheet.create({
+const makeStyles = (c: Colors) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#f5f5f5",
+    backgroundColor: c.background,
   },
   content: {
     padding: 16,
   },
   section: {
-    backgroundColor: "#fff",
+    backgroundColor: c.surface,
     borderRadius: 12,
     padding: 16,
     marginBottom: 12,
-    shadowColor: "#000",
+    shadowColor: c.shadow,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 3,
   },
   sectionTitle: {
+    color: c.text,
     fontSize: 16,
     fontWeight: "600",
     marginBottom: 12,
@@ -219,15 +225,16 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingVertical: 10,
     borderBottomWidth: 1,
-    borderBottomColor: "#eee",
+    borderBottomColor: c.border,
   },
   limitName: {
+    color: c.text,
     fontSize: 14,
     fontWeight: "500",
   },
   limitHard: {
     fontSize: 12,
-    color: "#666",
+    color: c.textSecondary,
     marginTop: 2,
   },
   editRow: {
@@ -238,47 +245,49 @@ const styles = StyleSheet.create({
   editInput: {
     flex: 1,
     borderWidth: 1,
-    borderColor: "#ddd",
+    borderColor: c.border,
     borderRadius: 6,
     padding: 8,
     fontSize: 14,
     marginRight: 8,
+    color: c.text,
+    backgroundColor: c.inputBackground,
   },
   smallButton: {
     paddingVertical: 8,
     paddingHorizontal: 12,
-    backgroundColor: "#f5f5f5",
+    backgroundColor: c.surfaceAlt,
     borderRadius: 6,
     marginHorizontal: 4,
   },
   smallButtonText: {
     fontSize: 14,
     fontWeight: "600",
-    color: "#007AFF",
+    color: c.primary,
   },
   editButton: {
     paddingVertical: 6,
     paddingHorizontal: 12,
-    backgroundColor: "#f5f5f5",
+    backgroundColor: c.surfaceAlt,
     borderRadius: 6,
   },
   editButtonText: {
     fontSize: 13,
-    color: "#007AFF",
+    color: c.primary,
     fontWeight: "600",
   },
   actionButton: {
-    backgroundColor: "#007AFF",
+    backgroundColor: c.primary,
     paddingVertical: 14,
     borderRadius: 8,
     alignItems: "center",
     marginVertical: 8,
   },
   actionButtonActive: {
-    backgroundColor: "#EF4444",
+    backgroundColor: c.short,
   },
   actionButtonText: {
-    color: "#fff",
+    color: c.onAccent,
     fontWeight: "600",
     fontSize: 16,
   },
@@ -287,20 +296,21 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     paddingVertical: 10,
     borderBottomWidth: 1,
-    borderBottomColor: "#eee",
-    backgroundColor: "#fff",
+    borderBottomColor: c.border,
+    backgroundColor: c.surface,
   },
   deviceName: {
+    color: c.text,
     fontSize: 14,
     fontWeight: "500",
   },
   deviceStatus: {
     fontSize: 12,
-    color: "#666",
+    color: c.textSecondary,
   },
   empty: {
     fontSize: 14,
-    color: "#666",
+    color: c.textSecondary,
     textAlign: "center",
     paddingVertical: 20,
   },

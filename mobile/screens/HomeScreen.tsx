@@ -10,10 +10,13 @@ import {
   ActivityIndicator,
 } from "react-native";
 import { useUIStore, useProposalsStore } from "../store/index";
+import { Colors, useTheme, useThemedStyles } from "../utils/theme";
 import { api } from "../services/api";
 import { StatusBanner, MoneyDisplay, OfflineBadge } from "../components/common";
 
 export const HomeScreen: React.FC = () => {
+  const c = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const { setStatus, mode, paused, feedsOk, balance, exposure, dailyPnl } = useUIStore();
   const { proposals, setProposals } = useProposalsStore();
   const [refreshing, setRefreshing] = useState(false);
@@ -76,17 +79,17 @@ export const HomeScreen: React.FC = () => {
         </View>
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Live Fixtures</Text>
-          <ActivityIndicator size="small" animating={refreshing} />
+          <ActivityIndicator size="small" color={c.textSecondary} animating={refreshing} />
         </View>
       </View>
     </View>
   );
 };
 
-const styles = StyleSheet.create({
+const makeStyles = (c: Colors) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#f5f5f5",
+    backgroundColor: c.background,
   },
   content: {
     padding: 16,
@@ -100,6 +103,7 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   sectionTitle: {
+    color: c.text,
     fontSize: 16,
     fontWeight: "600",
     marginBottom: 8,
@@ -109,38 +113,41 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     paddingVertical: 10,
     borderBottomWidth: 1,
-    borderBottomColor: "#eee",
+    borderBottomColor: c.border,
   },
   fixtureName: {
+    color: c.text,
     fontSize: 14,
     fontWeight: "500",
   },
   fixtureStatus: {
     fontSize: 12,
-    color: "#666",
+    color: c.textSecondary,
   },
   proposalRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     paddingVertical: 8,
     borderBottomWidth: 1,
-    borderBottomColor: "#eee",
+    borderBottomColor: c.border,
   },
   proposalSide: {
+    color: c.text,
     fontSize: 13,
     fontWeight: "600",
   },
   proposalPrice: {
     fontSize: 13,
-    color: "#666",
+    color: c.textSecondary,
   },
   proposalAmount: {
+    color: c.text,
     fontSize: 13,
     fontWeight: "600",
   },
   empty: {
     fontSize: 14,
-    color: "#666",
+    color: c.textSecondary,
     textAlign: "center",
     paddingVertical: 20,
   },

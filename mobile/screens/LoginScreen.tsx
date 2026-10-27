@@ -11,11 +11,14 @@ import {
   Platform,
 } from "react-native";
 import { useAuthStore } from "../store/index";
+import { Colors, useTheme, useThemedStyles } from "../utils/theme";
 import { api } from "../services/api";
 import { wsClient } from "../services/websocket";
 import { DEFAULT_SERVER_URL, DEFAULT_USERNAME } from "../utils/defaults";
 
 export const LoginScreen: React.FC = () => {
+  const c = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const { serverUrl, setServerUrl, setToken } = useAuthStore();
   const [url, setUrl] = useState(serverUrl || DEFAULT_SERVER_URL);
   // Storage hydrates asynchronously; keep the field in sync once it does.
@@ -65,6 +68,8 @@ export const LoginScreen: React.FC = () => {
       <Text style={styles.title}>PRED Agent</Text>
       <Text style={styles.subtitle}>Sign in to control your agent</Text>
       <TextInput
+        placeholderTextColor={c.placeholder}
+        keyboardAppearance={c.isDark ? "dark" : "light"}
         style={styles.input}
         placeholder="Server URL (https://...onrender.com)"
         value={url}
@@ -74,6 +79,8 @@ export const LoginScreen: React.FC = () => {
         keyboardType="url"
       />
       <TextInput
+        placeholderTextColor={c.placeholder}
+        keyboardAppearance={c.isDark ? "dark" : "light"}
         style={styles.input}
         placeholder="Username"
         value={username}
@@ -82,6 +89,8 @@ export const LoginScreen: React.FC = () => {
         autoCorrect={false}
       />
       <TextInput
+        placeholderTextColor={c.placeholder}
+        keyboardAppearance={c.isDark ? "dark" : "light"}
         style={styles.input}
         placeholder="Password"
         value={password}
@@ -101,19 +110,22 @@ export const LoginScreen: React.FC = () => {
   );
 };
 
-const styles = StyleSheet.create({
+const makeStyles = (c: Colors) => StyleSheet.create({
   container: { flex: 1, justifyContent: "center", padding: 24 },
-  title: { fontSize: 26, fontWeight: "700", marginBottom: 4 },
-  subtitle: { fontSize: 14, color: "#666", marginBottom: 20 },
+  title: {
+    color: c.text, fontSize: 26, fontWeight: "700", marginBottom: 4 },
+  subtitle: { fontSize: 14, color: c.textSecondary, marginBottom: 20 },
   input: {
     borderWidth: 1,
-    borderColor: "#ddd",
+    borderColor: c.border,
     borderRadius: 8,
     padding: 12,
     fontSize: 16,
     marginBottom: 12,
+    color: c.text,
+    backgroundColor: c.inputBackground,
   },
-  button: { backgroundColor: "#007AFF", borderRadius: 8, padding: 14, alignItems: "center" },
-  buttonText: { color: "#fff", fontWeight: "600", fontSize: 16 },
-  hint: { marginTop: 20, fontSize: 12, color: "#666", lineHeight: 18 },
+  button: { backgroundColor: c.primary, borderRadius: 8, padding: 14, alignItems: "center" },
+  buttonText: { color: c.onAccent, fontWeight: "600", fontSize: 16 },
+  hint: { marginTop: 20, fontSize: 12, color: c.textSecondary, lineHeight: 18 },
 });

@@ -12,10 +12,12 @@ import {
 } from "react-native";
 import * as LocalAuthentication from "expo-local-authentication";
 import { useUIStore } from "../store/index";
+import { Colors, useThemedStyles } from "../utils/theme";
 import { api } from "../services/api";
 import { StatusBanner } from "../components/common";
 
 export const PanicScreen: React.FC = () => {
+  const styles = useThemedStyles(makeStyles);
   const { mode, paused } = useUIStore();
   const [confirming, setConfirming] = useState(false);
   const [results, setResults] = useState<any[]>([]);
@@ -99,54 +101,54 @@ export const PanicScreen: React.FC = () => {
   );
 };
 
-const styles = StyleSheet.create({
+const makeStyles = (c: Colors) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#f5f5f5",
+    backgroundColor: c.background,
   },
   content: {
     padding: 16,
   },
   panicCard: {
-    backgroundColor: "#fff",
+    backgroundColor: c.surface,
     borderRadius: 16,
     padding: 24,
     alignItems: "center",
     marginBottom: 20,
-    shadowColor: "#000",
+    shadowColor: c.shadow,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.15,
     shadowRadius: 8,
     elevation: 5,
     borderWidth: 2,
-    borderColor: "#DC2626",
+    borderColor: c.danger,
   },
   panicTitle: {
     fontSize: 28,
     fontWeight: "800",
-    color: "#DC2626",
+    color: c.danger,
     marginBottom: 8,
   },
   panicSubtitle: {
     fontSize: 14,
-    color: "#666",
+    color: c.textSecondary,
     textAlign: "center",
     marginBottom: 20,
   },
   panicButton: {
-    backgroundColor: "#DC2626",
+    backgroundColor: c.danger,
     paddingVertical: 18,
     paddingHorizontal: 32,
     borderRadius: 12,
     width: "80%",
   },
   panicButtonConfirming: {
-    backgroundColor: "#B91C1C",
-    borderColor: "#FF0000",
+    backgroundColor: c.dangerDark,
+    borderColor: c.short,
     borderWidth: 2,
   },
   panicButtonText: {
-    color: "#fff",
+    color: c.onAccent,
     fontWeight: "800",
     fontSize: 16,
     textAlign: "center",
@@ -154,13 +156,14 @@ const styles = StyleSheet.create({
   panicHint: {
     marginTop: 12,
     fontSize: 12,
-    color: "#999",
+    color: c.textMuted,
     textAlign: "center",
   },
   resultsSection: {
     marginTop: 16,
   },
   sectionTitle: {
+    color: c.text,
     fontSize: 16,
     fontWeight: "600",
     marginBottom: 8,
@@ -170,10 +173,11 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     paddingVertical: 10,
     borderBottomWidth: 1,
-    borderBottomColor: "#eee",
-    backgroundColor: "#fff",
+    borderBottomColor: c.border,
+    backgroundColor: c.surface,
   },
   resultOrder: {
+    color: c.text,
     fontSize: 13,
     fontFamily: "monospace",
   },
@@ -182,14 +186,14 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   statusOk: {
-    color: "#22C55E",
+    color: c.long,
   },
   statusNoop: {
-    color: "#D97706",
+    color: c.alert,
   },
   empty: {
     fontSize: 14,
-    color: "#666",
+    color: c.textSecondary,
     textAlign: "center",
     paddingVertical: 20,
   },

@@ -13,11 +13,14 @@ import {
 } from "react-native";
 import * as LocalAuthentication from "expo-local-authentication";
 import { useUIStore, useProposalsStore } from "../store/index";
+import { Colors, useTheme, useThemedStyles } from "../utils/theme";
 import { api } from "../services/api";
 import { StatusBanner, OfflineBadge } from "../components/common";
 import { formatEdge, formatDateTime } from "../utils/format";
 
 export const ProposalsScreen: React.FC = () => {
+  const c = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const { proposals, setProposals } = useProposalsStore();
   const { mode, paused } = useUIStore();
   const [refreshing, setRefreshing] = useState(false);
@@ -160,6 +163,8 @@ export const ProposalsScreen: React.FC = () => {
         {isChanging ? (
           <View style={styles.amountInputRow}>
             <TextInput
+              placeholderTextColor={c.placeholder}
+              keyboardAppearance={c.isDark ? "dark" : "light"}
               style={styles.amountInput}
               placeholder="New amount (USD)"
               value={newAmount}
@@ -204,7 +209,7 @@ export const ProposalsScreen: React.FC = () => {
                   setNewAmount("");
                 }}
               >
-                <Text style={styles.buttonText}>Cancel amount</Text>
+                <Text style={[styles.buttonText, styles.buttonOutlineText]}>Cancel amount</Text>
               </TouchableOpacity>
             ) : (
               <TouchableOpacity
@@ -218,7 +223,7 @@ export const ProposalsScreen: React.FC = () => {
               style={[styles.button, styles.buttonOutline]}
               onPress={() => setChangingAmount(item.id)}
             >
-              <Text style={styles.buttonText}>Change amount</Text>
+              <Text style={[styles.buttonText, styles.buttonOutlineText]}>Change amount</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -246,20 +251,20 @@ export const ProposalsScreen: React.FC = () => {
 
 const ReactNativeRefreshControl = require("react-native").RefreshControl;
 
-const styles = StyleSheet.create({
+const makeStyles = (c: Colors) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#f5f5f5",
+    backgroundColor: c.background,
   },
   content: {
     padding: 16,
   },
   card: {
-    backgroundColor: "#fff",
+    backgroundColor: c.surface,
     borderRadius: 12,
     padding: 16,
     marginBottom: 12,
-    shadowColor: "#000",
+    shadowColor: c.shadow,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
@@ -273,14 +278,15 @@ const styles = StyleSheet.create({
   modeTag: {
     fontSize: 11,
     fontWeight: "600",
-    color: "#666",
+    color: c.textSecondary,
     textTransform: "uppercase",
   },
   expiry: {
     fontSize: 11,
-    color: "#999",
+    color: c.textMuted,
   },
   fixture: {
+    color: c.text,
     fontSize: 16,
     fontWeight: "700",
     marginBottom: 12,
@@ -292,9 +298,10 @@ const styles = StyleSheet.create({
   },
   label: {
     fontSize: 13,
-    color: "#666",
+    color: c.textSecondary,
   },
   value: {
+    color: c.text,
     fontSize: 13,
     fontWeight: "600",
     fontFamily: "monospace",
@@ -305,12 +312,12 @@ const styles = StyleSheet.create({
   reasonTitle: {
     fontSize: 11,
     fontWeight: "600",
-    color: "#22C55E",
+    color: c.long,
     marginBottom: 4,
   },
   reasonText: {
     fontSize: 12,
-    color: "#333",
+    color: c.text,
     marginBottom: 2,
   },
   risks: {
@@ -328,18 +335,21 @@ const styles = StyleSheet.create({
     marginHorizontal: 4,
   },
   buttonApprove: {
-    backgroundColor: "#22C55E",
+    backgroundColor: c.long,
   },
   buttonReject: {
-    backgroundColor: "#EF4444",
+    backgroundColor: c.short,
   },
   buttonOutline: {
-    backgroundColor: "#fff",
+    backgroundColor: c.surface,
     borderWidth: 1,
-    borderColor: "#ddd",
+    borderColor: c.border,
+  },
+  buttonOutlineText: {
+    color: c.text,
   },
   buttonText: {
-    color: "#fff",
+    color: c.onAccent,
     fontWeight: "600",
     fontSize: 14,
   },
@@ -350,22 +360,24 @@ const styles = StyleSheet.create({
   amountInput: {
     flex: 1,
     borderWidth: 1,
-    borderColor: "#ddd",
+    borderColor: c.border,
     borderRadius: 8,
     padding: 10,
     fontSize: 14,
     marginRight: 8,
+    color: c.text,
+    backgroundColor: c.inputBackground,
   },
   smallButton: {
     paddingVertical: 10,
     paddingHorizontal: 12,
-    backgroundColor: "#f5f5f5",
+    backgroundColor: c.surfaceAlt,
     borderRadius: 8,
     marginHorizontal: 4,
   },
   smallButtonText: {
     fontSize: 14,
     fontWeight: "600",
-    color: "#007AFF",
+    color: c.primary,
   },
 });

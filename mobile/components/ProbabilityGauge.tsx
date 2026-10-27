@@ -3,6 +3,7 @@
 
 import React from "react";
 import { View, Text, StyleSheet } from "react-native";
+import { Colors, useThemedStyles, useTheme } from "../utils/theme";
 
 interface ProbabilityGaugeProps {
   marketPrice: number | null; // 0-100 (cents)
@@ -19,6 +20,8 @@ export const ProbabilityGauge: React.FC<ProbabilityGaugeProps> = ({
   pHigh,
   side,
 }) => {
+  const c = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const getPosition = (value: number | null) => {
     if (value === null) return 0;
     // value is 0-1 for p_fair, 0-100 for market price
@@ -32,7 +35,7 @@ export const ProbabilityGauge: React.FC<ProbabilityGaugeProps> = ({
   const highPos = getPosition(pHigh);
 
   const sideColor =
-    side === "long" ? "#22C55E" : side === "short" ? "#EF4444" : "#60A5FA";
+    side === "long" ? c.long : side === "short" ? c.short : c.neutral;
 
   return (
     <View style={styles.container}>
@@ -55,7 +58,7 @@ export const ProbabilityGauge: React.FC<ProbabilityGaugeProps> = ({
           <View
             style={[
               styles.barTick,
-              { left: `${marketPos}%`, backgroundColor: "#666" },
+              { left: `${marketPos}%`, backgroundColor: c.marker },
             ]}
           />
         )}
@@ -87,49 +90,50 @@ function formatPriceCents(priceCents: string): string {
   return `$${(num / 100).toFixed(2)}`;
 }
 
-const styles = StyleSheet.create({
-  container: {
-    marginVertical: 8,
-  },
-  barTrack: {
-    height: 8,
-    backgroundColor: "#E0E0E0",
-    borderRadius: 4,
-    overflow: "hidden",
-    width: 200,
-    position: "relative",
-  },
-  barBand: {
-    position: "absolute",
-    top: 0,
-    bottom: 0,
-    borderRadius: 4,
-  },
-  barTick: {
-    position: "absolute",
-    top: 0,
-    bottom: 0,
-    width: 2,
-    backgroundColor: "#666",
-  },
-  barDot: {
-    position: "absolute",
-    top: -4,
-    bottom: -4,
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    borderWidth: 2,
-    borderColor: "#fff",
-  },
-  labels: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginTop: 4,
-  },
-  label: {
-    fontSize: 11,
-    color: "#666",
-    fontFamily: "monospace",
-  },
-});
+const makeStyles = (c: Colors) =>
+  StyleSheet.create({
+    container: {
+      marginVertical: 8,
+    },
+    barTrack: {
+      height: 8,
+      backgroundColor: c.track,
+      borderRadius: 4,
+      overflow: "hidden",
+      width: 200,
+      position: "relative",
+    },
+    barBand: {
+      position: "absolute",
+      top: 0,
+      bottom: 0,
+      borderRadius: 4,
+    },
+    barTick: {
+      position: "absolute",
+      top: 0,
+      bottom: 0,
+      width: 2,
+      backgroundColor: c.marker,
+    },
+    barDot: {
+      position: "absolute",
+      top: -4,
+      bottom: -4,
+      width: 12,
+      height: 12,
+      borderRadius: 6,
+      borderWidth: 2,
+      borderColor: c.surface,
+    },
+    labels: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      marginTop: 4,
+    },
+    label: {
+      fontSize: 11,
+      color: c.textSecondary,
+      fontFamily: "monospace",
+    },
+  });

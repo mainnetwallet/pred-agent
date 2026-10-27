@@ -6,7 +6,8 @@
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
     "android": {
-      "package": "com.mainnetwallet.predagent"
+      "package": "com.mainnetwallet.predagent",
+      "userInterfaceStyle": "automatic"
     },
     "ios": {
       "bundleIdentifier": "com.mainnetwallet.predagent"

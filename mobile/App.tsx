@@ -7,7 +7,8 @@ import {
   StyleSheet,
   ActivityIndicator,
 } from "react-native";
-import { NavigationContainer } from "@react-navigation/native";
+import { NavigationContainer, DarkTheme, DefaultTheme } from "@react-navigation/native";
+import { StatusBar } from "expo-status-bar";
 import { createStackNavigator } from "@react-navigation/stack";
 import { LoginScreen } from "./screens/LoginScreen";
 import { HomeScreen } from "./screens/HomeScreen";
@@ -17,10 +18,23 @@ import { LimitsSettingsScreen } from "./screens/LimitsSettingsScreen";
 import { useAuthStore } from "./store/index";
 import { wsClient } from "./services/websocket";
 import { api } from "./services/api";
+import { useTheme } from "./utils/theme";
 
 const Stack = createStackNavigator();
 
 export default function App() {
+  const c = useTheme();
+  const navTheme = {
+    ...(c.isDark ? DarkTheme : DefaultTheme),
+    colors: {
+      ...(c.isDark ? DarkTheme : DefaultTheme).colors,
+      background: c.background,
+      card: c.surface,
+      text: c.text,
+      border: c.border,
+      primary: c.primary,
+    },
+  };
   const { deviceToken, serverUrl, isAuthenticated } = useAuthStore();
   const [loading, setLoading] = useState(!useAuthStore.persist.hasHydrated());
 
@@ -49,14 +63,15 @@ export default function App() {
 
   if (loading) {
     return (
-      <View style={styles.loading}>
-        <ActivityIndicator size="large" />
+      <View style={[styles.loading, { backgroundColor: c.background }]}>
+        <ActivityIndicator size="large" color={c.textSecondary} />
       </View>
     );
   }
 
   return (
-    <NavigationContainer>
+    <NavigationContainer theme={navTheme}>
+      <StatusBar style={c.isDark ? "light" : "dark"} />
       <Stack.Navigator screenOptions={{ headerShown: false }}>
         {!isAuthenticated ? (
           <Stack.Screen name="Login" component={LoginScreen} />
