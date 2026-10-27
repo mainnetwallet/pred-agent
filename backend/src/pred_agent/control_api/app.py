@@ -45,9 +45,19 @@ _WEB_INDEX = Path(__file__).parent / "web" / "index.html"
 # ─────────────────────────────────────────────────────────────
 # game_status: known live signals (fail-closed — unknown = not live)
 # ─────────────────────────────────────────────────────────────
-_LIVE_STATUSES = {"in_play", "live", "1h", "2h", "ht", "et", "p", "inplay"}
-_UPCOMING_STATUSES = {"not_started", "ns", "upcoming", "pre_match", "scheduled", "tbd"}
+# Values are compared after normalisation (lowercase, no spaces/underscores/hyphens).
+# Observed in the live PRED feed: Scheduled/scheduled, Fixture, InProgress, Final.
+_LIVE_STATUSES = {
+    "inprogress", "inplay", "live", "1h", "2h", "ht", "et", "p",
+    "halftime", "firsthalf", "secondhalf", "extratime", "penalties",
+}
+_UPCOMING_STATUSES = {"scheduled", "fixture", "notstarted", "ns", "upcoming", "prematch", "tbd"}
+_FINISHED_STATUSES = {"final", "finished", "ft", "aet", "pen", "ended", "completed", "closed"}
 _UNKNOWN_GS_LOG: set[str] = set()   # log each unknown value once
+
+
+def _norm_gs(value: str) -> str:
+    return "".join(ch for ch in value.lower() if ch not in " _-")
 
 
 def _first(*vals: Any) -> Any:
@@ -60,11 +70,13 @@ def _fixture_state(game_status: str | None, kickoff: datetime | None) -> str:
     Fail-closed: unknown game_status → 'other' (not treated as live).
     """
     if game_status is not None:
-        gs = game_status.lower()
+        gs = _norm_gs(game_status)
         if gs in _LIVE_STATUSES:
             return "live"
         if gs in _UPCOMING_STATUSES:
             return "upcoming"
+        if gs in _FINISHED_STATUSES:
+            return "other"
         if gs not in _UNKNOWN_GS_LOG:
             _UNKNOWN_GS_LOG.add(gs)
             log.info("unknown game_status=%r — treated as 'other' (fail closed)", game_status)

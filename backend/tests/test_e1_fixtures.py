@@ -250,3 +250,14 @@ def test_adversarial_fixture_names_are_inert():
         # The name is plain text, not executed
         assert "execute" not in parent.status
         assert parent.status == "active"
+
+
+def test_fixture_state_real_pred_values() -> None:
+    from pred_agent.control_api.app import _fixture_state
+
+    assert _fixture_state("InProgress", None) == "live"
+    assert _fixture_state("in_play", None) == "live"
+    for v in ("Scheduled", "scheduled", "Fixture"):
+        assert _fixture_state(v, None) == "upcoming"
+    assert _fixture_state("Final", None) == "other"
+    assert _fixture_state("SomethingNew", None) == "other"  # unknown stays fail-closed
