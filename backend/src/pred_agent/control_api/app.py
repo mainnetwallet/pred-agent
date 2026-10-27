@@ -24,6 +24,7 @@ from pred_agent.control_api.auth import DeviceAuth
 from pred_agent.control_api.controller import AgentController, to_jsonable
 from pred_agent.control_api.session import LoginManager
 from pred_agent.events import EventBus
+from pred_agent.llm import LLMRequest, OpenAICompatClient, build_llm_client
 
 _WEB_INDEX = Path(__file__).parent / "web" / "index.html"
 
@@ -282,6 +283,35 @@ def create_app() -> FastAPI:
         if err:
             return error_response("bad_limit", err, 400)
         return envelope(ok=True, data=controller.limits_list())
+
+    @app.get("/v1/llm")
+    async def llm_info(authorization: str | None = Header(None)):
+        if _verify_auth(authorization) is None:
+            return _unauth()
+        llm = build_llm_client(settings)
+        configured = isinstance(llm, OpenAICompatClient)
+        return envelope(ok=True, data={
+            "configured": configured,
+            "model": settings.llm_model if configured else None,
+            "base_url": settings.llm_base_url if configured else None,
+        })
+
+    @app.post("/v1/llm/test")
+    async def llm_test(authorization: str | None = Header(None)):
+        if _verify_auth(authorization) is None:
+            return _unauth()
+        llm = build_llm_client(settings)
+        if not isinstance(llm, OpenAICompatClient):
+            return error_response("llm_not_configured", "set LLM_API_KEY and LLM_MODEL", 400)
+        res = await llm.complete(LLMRequest(
+            system_prompt="Reply with JSON only.",
+            user_prompt='Return {"ok": true}.',
+            response_schema={"type": "object", "required": ["ok"], "properties": {"ok": {"type": "boolean"}}},
+            max_tokens=20,
+        ))
+        if not res.valid:
+            return error_response("llm_failed", "LLM call failed; check LLM_API_KEY, LLM_MODEL, LLM_BASE_URL", 502)
+        return envelope(ok=True, data={"model": llm.model, "reply": res.parsed})
 
     @app.get("/v1/fixtures")
     async def fixtures(authorization: str | None = Header(None)):

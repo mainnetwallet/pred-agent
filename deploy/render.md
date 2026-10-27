@@ -15,11 +15,18 @@ Ekta Render web service e **website + mobile app API + Telegram bot** tinta-i ch
 | `TELEGRAM_BOT_TOKEN` | @BotFather theke paoa bot token |
 | `TELEGRAM_ALLOWED_USER_ID` | tomar numeric Telegram ID (@userinfobot theke) |
 | `LIVE_TRADING` | `false` rakho (PAPER mode) |
-| `PRIVATE_KEY`, `PRED_API_KEY`, `LLM_API_KEY`, `BASE_RPC_URL` | agent er jonno (optional ekhon) |
+| `LLM_API_KEY` | LLM provider er API key |
+| `LLM_MODEL` | model name (jemon `gpt-4o-mini`, `deepseek-chat`) |
+| `LLM_BASE_URL` | provider er API root, jemon `https://api.openai.com/v1` ba `https://openrouter.ai/api/v1` (`/chat/completions` nijer theke jure) |
+| `PRIVATE_KEY`, `PRED_API_KEY`, `BASE_RPC_URL` | agent er jonno (optional ekhon) |
 
 3. Deploy shesh hole `https://<service>.onrender.com/health` -> `{"ok":true,"status":"healthy"}`.
 
 **Starter (paid) plan dao.** Free plan idle hole ghumay, tokhon Telegram bot bondho hoye jay.
+
+## LLM thik ache kina check
+Login kore `GET /v1/llm` (configured? model?) ar `POST /v1/llm/test` (ekta chhoto call) chalao. Key kokhono response e ashe na.
+Je provider OpenAI-compatible `/chat/completions` bole, shob cholbe. Key/model na dile agent LLM chhara (adjustment 0) cholbe.
 
 ## Control korar 3 ta way
 
