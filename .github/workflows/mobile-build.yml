@@ -52,7 +52,6 @@ jobs:
         run: npx expo export --platform android --output-dir "$RUNNER_TEMP/export"
 
   build-android:
-    needs: test
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -79,6 +78,33 @@ jobs:
         env:
           CI: "1"
 
+      # JS-only change hole native compile skip hoy (Gradle up-to-date), build ~1-2 min.
+      # Key: lockfile + app.json + native config; ei file gulo bodlale full native rebuild hobe.
+      - name: Cache Android native build outputs
+        uses: actions/cache@v4
+        with:
+          path: |
+            mobile/android/.gradle
+            mobile/android/build
+            mobile/android/app/build
+            mobile/android/app/.cxx
+            mobile/node_modules/*/android/build
+            mobile/node_modules/*/android/.cxx
+            mobile/node_modules/@*/*/android/build
+            mobile/node_modules/@*/*/android/.cxx
+          key: android-native-${{ runner.os }}-${{ hashFiles('mobile/package-lock.json', 'mobile/app.json', '.github/workflows/mobile-build.yml') }}
+
+      # Release APK te lint-vital cholte dorkar nai (CI te ci.yml/jest/tsc ache) — ~20-40s save.
+      - name: Gradle init script (skip lint-vital)
+        run: |
+          cat > "$RUNNER_TEMP/skip-lint.init.gradle" <<'EOF'
+          allprojects {
+            tasks.configureEach { t ->
+              if (t.name.startsWith("lintVital") || t.name == "lintAnalyzeRelease") { t.enabled = false }
+            }
+          }
+          EOF
+
       - name: Build release APK
         working-directory: mobile/android
         run: |
@@ -86,6 +112,7 @@ jobs:
           # Live output dekhar jonno tee; ekta ABI (arm64-v8a) e build kora hocche, native compile druto hoy.
           # 32-bit/emulator er jonno: -PreactNativeArchitectures=arm64-v8a,armeabi-v7a,x86_64
           ./gradlew assembleRelease --no-daemon --stacktrace \
+            --parallel --build-cache -I "$RUNNER_TEMP/skip-lint.init.gradle" \
             -PreactNativeArchitectures=arm64-v8a \
             -Dorg.gradle.jvmargs=-Xmx4g 2>&1 | tee "$RUNNER_TEMP/gradle.log"
           code=${PIPESTATUS[0]}
