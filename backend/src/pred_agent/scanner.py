@@ -67,17 +67,19 @@ class Scanner:
         results: list[DiscoveredParent] = []
         offset = 0
         self._scan_cutoff = self._resolve_cutoff()
-        stats: dict[str, Any] = {
-            "pages": 0, "total": None, "seen": 0, "families": {}, "moneyline_statuses": {},
+        stats = self.last_scan  # persistent dict: /status sees live progress during a scan
+        stats.clear()
+        stats |= {
+            "state": "scanning", "pages": 0, "total": None, "seen": 0, "families": {}, "moneyline_statuses": {},
             "dropped_league": 0, "dropped_no_fixture": 0, "dropped_no_active_child": 0,
             "kept": 0, "error": None, "cutoff": None,
         }
         stats["cutoff"] = self._scan_cutoff
-        self.last_scan = stats
         while True:
             try:
                 page = self._fetch_page(offset)
             except Exception as exc:
+                stats["state"] = "error"
                 stats["error"] = f"{type(exc).__name__}: {exc}"[:200]
                 raise
             stats["pages"] += 1
@@ -134,6 +136,7 @@ class Scanner:
             if offset >= total:
                 break
         stats["kept"] = len(results)
+        stats["state"] = "done"
         return results
 
     def upsert_to_db(self, session: Session, results: list[DiscoveredParent]) -> int:

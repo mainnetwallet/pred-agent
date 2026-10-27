@@ -99,9 +99,9 @@ async def scan_once(
     try:
         results = await asyncio.to_thread(scanner.scan_active_moneyline)
     except Exception:
-        controller.set_feed_diag(dict(getattr(scanner, "last_scan", {}) or {"error": "scan failed"}))
+        controller.set_feed_diag(getattr(scanner, "last_scan", None) or {"error": "scan failed"})
         raise
-    controller.set_feed_diag(dict(getattr(scanner, "last_scan", {}) or {}))
+    controller.set_feed_diag(getattr(scanner, "last_scan", None) or {})
     if not results:
         # Fail closed: an empty scan does not count as a healthy feed.
         log.warning(
@@ -315,6 +315,7 @@ async def run_background_tasks(
     monitor = monitor or RulesMonitor()
 
     async def scan_loop() -> None:
+        controller.set_feed_diag(getattr(scanner, "last_scan", None) or {"state": "starting"})
         while not stop_ev.is_set():
             try:
                 await scan_once(
