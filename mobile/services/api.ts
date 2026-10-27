@@ -13,8 +13,9 @@ import {
   Limit,
   Device,
 } from "../types/api";
+import { DEFAULT_SERVER_URL } from "../utils/defaults";
 
-const DEFAULT_BASE = process.env.EXPO_PUBLIC_API_BASE || "";
+const DEFAULT_BASE = DEFAULT_SERVER_URL;
 
 class ApiClient {
   private token: string | null = null;

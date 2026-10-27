@@ -13,11 +13,12 @@ import {
 import { useAuthStore } from "../store/index";
 import { api } from "../services/api";
 import { wsClient } from "../services/websocket";
+import { DEFAULT_USERNAME } from "../utils/defaults";
 
 export const LoginScreen: React.FC = () => {
   const { serverUrl, setServerUrl, setToken } = useAuthStore();
   const [url, setUrl] = useState(serverUrl);
-  const [username, setUsername] = useState("");
+  const [username, setUsername] = useState(DEFAULT_USERNAME);
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
 

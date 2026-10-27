@@ -4,6 +4,7 @@ import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import * as SecureStore from "expo-secure-store";
 import { Mode, StatusResponse, Proposal, Order, Position, Device } from "../types/api";
+import { DEFAULT_SERVER_URL } from "../utils/defaults";
 
 // SecureStore driver for zustand persist
 const secureStorage = {
@@ -43,7 +44,7 @@ export const useAuthStore = create<AuthStore>()(
   persist(
     (set) => ({
       deviceToken: null,
-      serverUrl: process.env.EXPO_PUBLIC_API_BASE || "",
+      serverUrl: DEFAULT_SERVER_URL,
       isAuthenticated: false,
       setToken: (token) => set({ deviceToken: token, isAuthenticated: !!token }),
       setServerUrl: (url) => set({ serverUrl: url }),
