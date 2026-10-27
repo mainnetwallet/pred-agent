@@ -47,6 +47,10 @@ jobs:
       - name: Typecheck
         run: npx tsc --noEmit
 
+      # Metro bundle check: missing module hole ekhanei fail kore, Gradle er age.
+      - name: JS bundle check
+        run: npx expo export --platform android --output-dir "$RUNNER_TEMP/export"
+
   build-android:
     needs: test
     runs-on: ubuntu-24.04

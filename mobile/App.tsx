@@ -1,5 +1,6 @@
 // Main app entry — Expo Router not used; simple navigator with screens
 
+import "react-native-gesture-handler";
 import { useEffect, useState } from "react";
 import {
   View,
