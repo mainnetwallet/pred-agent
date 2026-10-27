@@ -9,7 +9,7 @@ import {
 } from "react-native";
 import { NavigationContainer } from "@react-navigation/native";
 import { createStackNavigator } from "@react-navigation/stack";
-import { PairingScreen } from "./screens/PairingScreen";
+import { LoginScreen } from "./screens/LoginScreen";
 import { HomeScreen } from "./screens/HomeScreen";
 import { ProposalsScreen } from "./screens/ProposalsScreen";
 import { PanicScreen } from "./screens/PanicScreen";
@@ -21,21 +21,31 @@ import { api } from "./services/api";
 const Stack = createStackNavigator();
 
 export default function App() {
-  const { deviceToken, isAuthenticated } = useAuthStore();
-  const [loading, setLoading] = useState(true);
+  const { deviceToken, serverUrl, isAuthenticated } = useAuthStore();
+  const [loading, setLoading] = useState(!useAuthStore.persist.hasHydrated());
 
   useEffect(() => {
-    // Check for existing token
-    // In production, this would read from SecureStore via zustand persist
-    setLoading(false);
+    // Wait for the saved session to load from SecureStore before choosing a screen.
+    if (useAuthStore.persist.hasHydrated()) {
+      setLoading(false);
+      return;
+    }
+    return useAuthStore.persist.onFinishHydration(() => setLoading(false));
   }, []);
 
   useEffect(() => {
-    if (deviceToken) {
-      api.setToken(deviceToken);
-      wsClient.setToken(deviceToken);
+    if (serverUrl) {
+      api.setBase(serverUrl);
+      wsClient.setUrl(serverUrl);
     }
-  }, [deviceToken]);
+    api.setToken(deviceToken);
+    wsClient.setToken(deviceToken);
+  }, [deviceToken, serverUrl]);
+
+  // Server says the session expired / password changed -> back to login.
+  useEffect(() => {
+    api.onUnauthorized(() => useAuthStore.getState().clearToken());
+  }, []);
 
   if (loading) {
     return (
@@ -49,7 +59,7 @@ export default function App() {
     <NavigationContainer>
       <Stack.Navigator screenOptions={{ headerShown: false }}>
         {!isAuthenticated ? (
-          <Stack.Screen name="Pairing" component={PairingScreen} />
+          <Stack.Screen name="Login" component={LoginScreen} />
         ) : (
           <>
             <Stack.Screen name="Home" component={HomeScreen} />

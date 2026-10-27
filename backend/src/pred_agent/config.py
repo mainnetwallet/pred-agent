@@ -52,9 +52,16 @@ class Settings(BaseSettings):
     sports_api_key: str | None = None
     base_rpc_url: str | None = None
 
+    # App / website login (fixed credentials come from env, never from code)
+    admin_username: str = "admin"
+    admin_password: str | None = None
+    session_secret: str | None = None
+    session_ttl_hours: int = 24
+
     # Operational flags
     live_trading: bool = False
     control_api_bind: str | None = None
+    database_url: str | None = None
 
     # Timing
     auth_login_message: str = "Sign in to PRED Trading Platform"

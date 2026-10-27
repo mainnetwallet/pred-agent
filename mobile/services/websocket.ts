@@ -28,6 +28,10 @@ export class ControlWebSocket extends (EventEmitter as new () => EventEmitter) {
     this.url = url.replace(/^http/, "ws");
   }
 
+  setUrl(url: string) {
+    this.url = url.replace(/^http/, "ws");
+  }
+
   setToken(token: string | null) {
     this.token = token;
     if (token && !this.connected) {

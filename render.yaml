@@ -1,0 +1,32 @@
+# Render Blueprint — PRED Agent (web dashboard + app API + Telegram bot in one service)
+# Secrets are NOT stored here: every `sync: false` var is entered in the Render dashboard.
+services:
+  - type: web
+    name: pred-agent
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: .
+    plan: starter            # always-on; free plan sleeps and would stop the Telegram bot
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: LIVE_TRADING    # keep false until you finish the live checklist
+        value: "false"
+      - key: ADMIN_USERNAME
+        value: admin         # change if you like
+      - key: ADMIN_PASSWORD  # login password for website + app
+        sync: false
+      - key: SESSION_SECRET  # signs login tokens; keeps sessions valid across redeploys
+        generateValue: true
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_ALLOWED_USER_ID
+        sync: false
+      - key: PRIVATE_KEY
+        sync: false
+      - key: PRED_API_KEY
+        sync: false
+      - key: LLM_API_KEY
+        sync: false
+      - key: BASE_RPC_URL
+        sync: false

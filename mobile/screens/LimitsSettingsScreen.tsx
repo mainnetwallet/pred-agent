@@ -11,7 +11,7 @@ import {
   TextInput,
 } from "react-native";
 import * as LocalAuthentication from "expo-local-authentication";
-import { useUIStore, useDevicesStore } from "../store/index";
+import { useUIStore, useDevicesStore, useAuthStore } from "../store/index";
 import { api } from "../services/api";
 import { StatusBanner } from "../components/common";
 import { formatUsd } from "../utils/format";
@@ -19,6 +19,7 @@ import { formatUsd } from "../utils/format";
 export const LimitsSettingsScreen: React.FC = () => {
   const { mode, paused } = useUIStore();
   const { devices, setDevices } = useDevicesStore();
+  const { clearToken } = useAuthStore();
   const [limits, setLimits] = useState<any[]>([]);
   const [editing, setEditing] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
@@ -158,6 +159,13 @@ export const LimitsSettingsScreen: React.FC = () => {
             <Text style={styles.actionButtonText}>
               {paused ? "Resume Trading" : "Pause Trading"}
             </Text>
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Account</Text>
+          <TouchableOpacity style={styles.actionButton} onPress={clearToken}>
+            <Text style={styles.actionButtonText}>Log out</Text>
           </TouchableOpacity>
         </View>
 

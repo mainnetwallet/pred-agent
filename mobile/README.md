@@ -21,24 +21,17 @@ npx expo start
 Then scan the QR code with the Expo Go app on your phone, or press `a` for Android
 emulator / `i` for iOS simulator.
 
-## Connect to Control API
+## Login
 
-The app connects to `EXPO_PUBLIC_API_BASE` (default `http://127.0.0.1:8000`).
-For Tailscale, set this to your VPS tailnet address:
-
-```bash
-EXPO_PUBLIC_API_BASE=http://<tailscale-ip>:8000 npx expo start
-```
-
-## Pairing
-
-1. On the server: `python scripts/pair_device.py --name "my-phone"`
-2. In the app: enter the pairing code and name the device
-3. Token is stored in `expo-secure-store` (Keychain/Keystore)
+Open the app, enter your server URL (e.g. `https://pred-agent.onrender.com`),
+and the username/password that are set as `ADMIN_USERNAME` / `ADMIN_PASSWORD`
+in the server environment (Render env vars). The session token is stored in
+`expo-secure-store` (Keychain/Keystore). Optionally prefill the URL with
+`EXPO_PUBLIC_API_BASE`. Log out from Limits & settings.
 
 ## Screens
 
-- **Pairing** — enter code, name device
+- **Login** — server URL, username, password
 - **Home** — status strip (PAPER/LIVE + paused), balance, exposure, daily PnL
 - **Proposals** — card stack, Approve (biometric), Change amount, Reject
 - **Panic** — always reachable, two-step confirm, cancel results

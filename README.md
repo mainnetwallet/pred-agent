@@ -8,6 +8,13 @@ handle UNKNOWN orders, PAPER → LIVE switch, and compromise response.
 
 ---
 
+## 0. Render + login (website, app, Telegram)
+
+Deploy on Render with the Blueprint (`render.yaml`) and set `ADMIN_USERNAME`,
+`ADMIN_PASSWORD`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_ALLOWED_USER_ID` as env vars.
+Then log in to the website at `https://<service>.onrender.com/`, the mobile app, or
+control the agent from Telegram. Full steps: `deploy/render.md`.
+
 ## 1. Start the agent
 
 ```bash

@@ -32,3 +32,6 @@ mobile/dist/
 deploy/secrets/*.key
 deploy/secrets/*.txt
 deploy/backups/
+
+!.env.example
+!backend/.env.example

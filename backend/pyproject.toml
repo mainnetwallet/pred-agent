@@ -37,6 +37,9 @@ dev = [
 where = ["src"]
 include = ["pred_agent*"]
 
+[tool.setuptools.package-data]
+pred_agent = ["control_api/web/*.html"]
+
 [tool.ruff]
 line-length = 100
 target-version = "py311"

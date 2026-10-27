@@ -1,40 +1,51 @@
 # Render deployment guide — PRED Agent
 
-Render e deploy korar guide. Tailscale (private) ar Render URL (public) dui-i rakha hobe.
+Ekta Render web service e **website + mobile app API + Telegram bot** tinta-i cholbe.
 
-## Age jene rakho (repo er current obostha)
+## Deploy (Blueprint diye, sobcheye sohoj)
 
-1. **`backend/src/pred_agent/main.py` ekhono stub.** `TODO: wire scanner, realtime, execution, telegram, control_api` lekha ache. Kono port e listen kore na, tai Render "no open port detected" bole deploy fail dekhabe. Uvicorn diye Control API `0.0.0.0:$PORT` e start korte hobe.
-2. **`docker-compose.yml` Render e kaj kore na.** Render compose chalay na. Postgres alada Render Postgres hishebe nite hobe. `CONTROL_API_BIND` (Tailscale IP bind) Render e onno rokom.
-3. **Device pairing in-memory** (`control_api/auth.py` er `DeviceAuth`). Restart/redeploy hole phone abar pair korte hobe. Persist korte DB te rakhte hobe.
+1. Render Dashboard -> **New -> Blueprint** -> GitHub repo `mainnetwallet/pred-agent` select koro (`render.yaml` auto-detect hobe).
+2. Environment variables dashboard e boshao (secret, kothao commit korbe na):
 
-## Dui system kivabe rakhbe
+| Variable | Ki |
+|---|---|
+| `ADMIN_USERNAME` | website/app login username (default `admin`) |
+| `ADMIN_PASSWORD` | website/app login password (**lomba, unique** dao) |
+| `SESSION_SECRET` | login token sign korar secret (Blueprint auto generate kore) |
+| `TELEGRAM_BOT_TOKEN` | @BotFather theke paoa bot token |
+| `TELEGRAM_ALLOWED_USER_ID` | tomar numeric Telegram ID (@userinfobot theke) |
+| `LIVE_TRADING` | `false` rakho (PAPER mode) |
+| `PRIVATE_KEY`, `PRED_API_KEY`, `LLM_API_KEY`, `BASE_RPC_URL` | agent er jonno (optional ekhon) |
 
-- **Render URL (public, https):** shudhu `/health` ar device-token auth diye protected endpoint. Control API public e dewa uchit na, karon agent er `PRIVATE_KEY` (wallet) thake.
-- **Tailscale (private):** admin, pairing, phone app er jonno. Render e kernel TUN nai, tai container er bhitore `tailscaled --tun=userspace-networking` chalate hobe, ephemeral auth key diye. Deploy e ekbar verify koro.
+3. Deploy shesh hole `https://<service>.onrender.com/health` -> `{"ok":true,"status":"healthy"}`.
 
-## Setup steps
+**Starter (paid) plan dao.** Free plan idle hole ghumay, tokhon Telegram bot bondho hoye jay.
 
-1. **Postgres:** Render Dashboard -> New -> PostgreSQL. **Internal Database URL** copy koro.
-2. **Web Service:** New -> Web Service -> GitHub repo `mainnetwallet/pred-agent`.
-   - Runtime: **Docker**
-   - Dockerfile Path: `backend/Dockerfile`
-   - Docker Build Context Directory: `.` (repo root)
-3. **Plan:** Agent 24/7 scan kore ar Telegram poll kore. Free web service idle hole ghumay, tai **paid (Starter)** plan nao. Free Postgres er limit Render pricing page e dekhe nio.
-4. **Environment variables** (secret hishebe, `.env` commit korbe na):
-   - `PRIVATE_KEY`, `PRED_API_KEY`, `LLM_API_KEY`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_ALLOWED_USER_ID`, `BASE_RPC_URL`
-   - `DATABASE_URL` = Render Postgres URL
-   - `LIVE_TRADING=false` (age paper mode, live checklist shesh na hole `true` koro na)
-   - `TS_AUTHKEY` = Tailscale reusable + ephemeral auth key
-5. **Health Check Path:** `/health`
-6. **Migration:** Deploy er por Render Shell e `alembic upgrade head` (ba pre-deploy command).
-7. **Verify:** `https://<service>.onrender.com/health` -> `{"ok":true,"status":"healthy"}`. Phone e Tailscale on kore tailnet address diyeo check koro.
-8. Phone app e `EXPO_PUBLIC_API_BASE` set koro (Tailscale address ba Render URL).
+## Control korar 3 ta way
 
-## Baki kaj (code)
+### 1. Website
+`https://<service>.onrender.com/` kholo -> `ADMIN_USERNAME` / `ADMIN_PASSWORD` diye login.
+Status, Pause/Resume, **PANIC**, proposals Approve/Reject, positions, orders, limits.
 
-- `main.py` te uvicorn wire kora
-- `DATABASE_URL` support
-- `render.yaml` (Blueprint)
-- Tailscale userspace start kora entrypoint script
-- Device pairing DB te persist kora
+### 2. Mobile app
+App kholo -> Server URL te `https://<service>.onrender.com`, ar same username/password. Token secure storage e thake.
+Phone e build: `mobile/README.md` ar `.github/workflows/mobile-build.yml`.
+
+### 3. Telegram
+Bot ke message pathao (sudhu `TELEGRAM_ALLOWED_USER_ID` er user kaj korbe, baki sobai ignored):
+`/status` `/pause` `/resume` `/panic` `/proposals` `/approve <id> [amount]` `/reject <id>` `/limits`
+
+## Password change korbe kivabe
+Render -> Environment -> `ADMIN_PASSWORD` update -> redeploy. Purono sob login token invalid hobe na jodi `SESSION_SECRET` same thake; sob session ekshathe bondho korte `SESSION_SECRET` o bodlao.
+
+## Security notes
+- Login e 5 bar bhul password dile 5 minute lock.
+- Token expire hoy `SESSION_TTL_HOURS` (default 24) ghonta pore.
+- Control layer kokhono `LIVE_TRADING` on korte pare na; seta shudhu Render env theke.
+- Render URL public https, tai password lomba rakho.
+
+## Ekhono baki (jene rakho)
+- Proposals/orders/positions ekhon **memory te**; redeploy/restart hole clear hoy. DB persist pore.
+- Scanner/realtime/LLM strategy ekhono `main.py` e wire kora na, tai nijer theke notun proposal toiri hoy na; control layer (login, pause, panic, approve/reject, Telegram) ready.
+- `/panic` ekhon paper order cancel kore; LIVE cancel-all live executor wire korar por.
+- `docker-compose.yml`/Tailscale option ager moto private deploy er jonno ache.

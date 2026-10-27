@@ -32,8 +32,10 @@ const secureStorage = {
 
 export interface AuthStore {
   deviceToken: string | null;
+  serverUrl: string;
   isAuthenticated: boolean;
   setToken: (token: string | null) => void;
+  setServerUrl: (url: string) => void;
   clearToken: () => void;
 }
 
@@ -41,8 +43,10 @@ export const useAuthStore = create<AuthStore>()(
   persist(
     (set) => ({
       deviceToken: null,
+      serverUrl: process.env.EXPO_PUBLIC_API_BASE || "",
       isAuthenticated: false,
       setToken: (token) => set({ deviceToken: token, isAuthenticated: !!token }),
+      setServerUrl: (url) => set({ serverUrl: url }),
       clearToken: () => set({ deviceToken: null, isAuthenticated: false }),
     }),
     {

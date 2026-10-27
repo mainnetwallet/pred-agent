@@ -14,10 +14,25 @@ import {
   Device,
 } from "../types/api";
 
-const API_BASE = process.env.EXPO_PUBLIC_API_BASE || "http://127.0.0.1:8000";
+const DEFAULT_BASE = process.env.EXPO_PUBLIC_API_BASE || "";
 
 class ApiClient {
   private token: string | null = null;
+  private base: string = DEFAULT_BASE;
+
+  setBase(url: string) {
+    this.base = url.trim().replace(/\/+$/, "");
+  }
+
+  getBase() {
+    return this.base;
+  }
+
+  private unauthorizedHandler: (() => void) | null = null;
+
+  onUnauthorized(handler: () => void) {
+    this.unauthorizedHandler = handler;
+  }
 
   setToken(token: string | null) {
     this.token = token;
@@ -33,7 +48,7 @@ class ApiClient {
       ...(opts.headers as Record<string, string> || {}),
     };
 
-    const resp = await fetch(`${API_BASE}${path}`, {
+    const resp = await fetch(`${this.base}${path}`, {
       ...opts,
       headers,
     });
@@ -43,6 +58,10 @@ class ApiClient {
       body = await resp.json();
     } catch {
       body = {};
+    }
+
+    if (resp.status === 401 && this.token && this.unauthorizedHandler) {
+      this.unauthorizedHandler();
     }
 
     if (!resp.ok) {
@@ -157,7 +176,15 @@ class ApiClient {
     });
   }
 
-  // ---- Pairing ----
+  // ---- Login (username/password are fixed in the server env) ----
+  async login(username: string, password: string): Promise<ApiEnvelope<{ token: string; expires_in: number }>> {
+    return this.request<{ token: string; expires_in: number }>("/v1/login", {
+      method: "POST",
+      body: JSON.stringify({ username, password }),
+    });
+  }
+
+  // ---- Pairing (legacy) ----
   async pair(code: string, deviceName: string, devicePublicKey: string): Promise<ApiEnvelope<{ device_token: string }>> {
     return this.request<{ device_token: string }>("/v1/pair", {
       method: "POST",

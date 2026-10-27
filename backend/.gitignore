@@ -25,3 +25,5 @@ logs/
 backend/build/
 backend/dist/
 backend/*.egg-info/
+
+!.env.example

@@ -12,14 +12,20 @@ from __future__ import annotations
 
 import json
 from contextlib import asynccontextmanager
+from decimal import Decimal, InvalidOperation
+from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, Header, WebSocket, WebSocketDisconnect
-from fastapi.responses import JSONResponse
+from fastapi import FastAPI, Header, Request, WebSocket, WebSocketDisconnect
+from fastapi.responses import HTMLResponse, JSONResponse
 
 from pred_agent.config import load_settings
 from pred_agent.control_api.auth import DeviceAuth
+from pred_agent.control_api.controller import AgentController, to_jsonable
+from pred_agent.control_api.session import LoginManager
 from pred_agent.events import EventBus
+
+_WEB_INDEX = Path(__file__).parent / "web" / "index.html"
 
 # ---------------------------------------------------------------------------
 # Response envelope
@@ -53,15 +59,32 @@ def create_app() -> FastAPI:
     settings = load_settings()
     bus = EventBus()
     auth = DeviceAuth()
+    login_mgr = LoginManager(
+        username=settings.admin_username,
+        password=settings.admin_password,
+        secret=settings.session_secret,
+        ttl_hours=settings.session_ttl_hours,
+    )
+    controller = AgentController(settings)
 
     app = FastAPI(title="PRED Control API")
     app.state.settings = settings
     app.state.auth = auth
     app.state.bus = bus
+    app.state.login = login_mgr
+    app.state.controller = controller
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        yield
+        # Telegram bot runs in this same process/event loop (polling, no webhook).
+        from pred_agent.telegram.bot import start_bot, stop_bot
+
+        tg_app = await start_bot(settings, controller)
+        app.state.telegram = tg_app
+        try:
+            yield
+        finally:
+            await stop_bot(tg_app)
 
     app.router.lifespan_context = lifespan
 
@@ -106,7 +129,7 @@ def create_app() -> FastAPI:
         caller = _verify_auth(authorization)
         if caller is None:
             return error_response("unauthorized", "invalid or missing device token", 401)
-        if caller != device_id:
+        if caller != device_id and not caller.startswith("session:"):
             return error_response("forbidden", "cannot revoke another device", 403)
         ok = auth.revoke_device(device_id)
         if not ok:
@@ -117,11 +140,154 @@ def create_app() -> FastAPI:
     # Auth helper
     # ------------------------------------------------------------------ #
 
+    def _verify_token(token: str) -> str | None:
+        """Accept a login session token or a paired-device token."""
+        user = login_mgr.verify(token)
+        if user is not None:
+            return f"session:{user}"
+        return auth.verify_token(token)
+
     def _verify_auth(authorization: str | None) -> str | None:
         if not authorization or not authorization.startswith("Bearer "):
             return None
-        token = authorization[len("Bearer "):]
-        return auth.verify_token(token)
+        return _verify_token(authorization[len("Bearer "):])
+
+    def _unauth() -> JSONResponse:
+        return error_response("unauthorized", "invalid or missing token", 401)
+
+    def _client_key(request: Request) -> str:
+        fwd = request.headers.get("x-forwarded-for")
+        if fwd:
+            return fwd.split(",")[-1].strip()  # last hop = the proxy's view of the client
+        return request.client.host if request.client else "?"
+
+    # ------------------------------------------------------------------ #
+    # Website + login
+    # ------------------------------------------------------------------ #
+
+    @app.get("/", response_class=HTMLResponse)
+    async def index():
+        return HTMLResponse(_WEB_INDEX.read_text(encoding="utf-8"))
+
+    @app.post("/v1/login")
+    async def login(body: dict, request: Request):
+        if not login_mgr.enabled:
+            return error_response("login_disabled", "ADMIN_PASSWORD is not set on the server", 503)
+        client = _client_key(request)
+        wait = login_mgr.locked_for(client)
+        if wait:
+            return error_response("locked", f"too many attempts, retry in {wait}s", 429)
+        token = login_mgr.login(str(body.get("username", "")), str(body.get("password", "")), client)
+        if token is None:
+            return error_response("invalid_credentials", "wrong username or password", 401)
+        return envelope(ok=True, data={"token": token, "expires_in": settings.session_ttl_hours * 3600})
+
+    @app.get("/v1/me")
+    async def me(authorization: str | None = Header(None)):
+        who = _verify_auth(authorization)
+        if who is None:
+            return _unauth()
+        return envelope(ok=True, data={"user": who})
+
+    # ------------------------------------------------------------------ #
+    # Control (all require auth)
+    # ------------------------------------------------------------------ #
+
+    @app.get("/v1/status")
+    async def status(authorization: str | None = Header(None)):
+        if _verify_auth(authorization) is None:
+            return _unauth()
+        return envelope(ok=True, data=controller.status())
+
+    @app.post("/v1/pause")
+    async def pause(authorization: str | None = Header(None)):
+        if _verify_auth(authorization) is None:
+            return _unauth()
+        controller.pause()
+        return envelope(ok=True, data=controller.status())
+
+    @app.post("/v1/resume")
+    async def resume(authorization: str | None = Header(None)):
+        if _verify_auth(authorization) is None:
+            return _unauth()
+        controller.resume()
+        return envelope(ok=True, data=controller.status())
+
+    @app.post("/v1/panic")
+    async def panic(authorization: str | None = Header(None)):
+        if _verify_auth(authorization) is None:
+            return _unauth()
+        result = controller.panic()
+        return envelope(ok=True, data={**controller.status(), **result})
+
+    @app.get("/v1/proposals")
+    async def proposals(status: str | None = None, authorization: str | None = Header(None)):
+        if _verify_auth(authorization) is None:
+            return _unauth()
+        return envelope(ok=True, data=to_jsonable(controller.list_proposals(status)))
+
+    @app.post("/v1/proposals/{proposal_id}/approve")
+    async def approve(proposal_id: str, body: dict | None = None,
+                      authorization: str | None = Header(None)):
+        if _verify_auth(authorization) is None:
+            return _unauth()
+        amount: Decimal | None = None
+        raw = (body or {}).get("amount_usd")
+        if raw not in (None, ""):
+            try:
+                amount = Decimal(str(raw))
+            except InvalidOperation:
+                return error_response("bad_amount", "amount_usd must be a decimal string", 400)
+        prop = controller.approve(proposal_id, via="app", amount=amount)
+        if prop is None:
+            return error_response(
+                "not_approvable",
+                "proposal missing/expired, agent paused, or amount outside limits",
+                409,
+            )
+        return envelope(ok=True, data=to_jsonable(prop))
+
+    @app.post("/v1/proposals/{proposal_id}/reject")
+    async def reject(proposal_id: str, authorization: str | None = Header(None)):
+        if _verify_auth(authorization) is None:
+            return _unauth()
+        prop = controller.reject(proposal_id, via="app")
+        if prop is None:
+            return error_response("not_found", "proposal missing or already decided", 404)
+        return envelope(ok=True, data=to_jsonable(prop))
+
+    @app.get("/v1/orders")
+    async def orders(authorization: str | None = Header(None)):
+        if _verify_auth(authorization) is None:
+            return _unauth()
+        return envelope(ok=True, data=controller.orders())
+
+    @app.get("/v1/positions")
+    async def positions(authorization: str | None = Header(None)):
+        if _verify_auth(authorization) is None:
+            return _unauth()
+        return envelope(ok=True, data=controller.positions_list())
+
+    @app.get("/v1/limits")
+    async def get_limits(authorization: str | None = Header(None)):
+        if _verify_auth(authorization) is None:
+            return _unauth()
+        return envelope(ok=True, data=controller.limits_list())
+
+    @app.put("/v1/limits")
+    async def put_limits(body: dict, authorization: str | None = Header(None)):
+        if _verify_auth(authorization) is None:
+            return _unauth()
+        err = controller.set_limits(body)
+        if err:
+            return error_response("bad_limit", err, 400)
+        return envelope(ok=True, data=controller.limits_list())
+
+    @app.get("/v1/fixtures")
+    async def fixtures(authorization: str | None = Header(None)):
+        if _verify_auth(authorization) is None:
+            return _unauth()
+        return envelope(ok=True, data=[])  # scanner not wired into this process yet
 
     # ------------------------------------------------------------------ #
     # WebSocket
@@ -138,7 +304,7 @@ def create_app() -> FastAPI:
                 mtype = msg.get("type")
                 if mtype == "auth":
                     token = msg.get("token", "")
-                    device_id = auth.verify_token(token)
+                    device_id = _verify_token(token)
                     if device_id is None:
                         await websocket.send_text(json.dumps({"type": "error", "error": "invalid_token"}))
                         await websocket.close(code=4001)

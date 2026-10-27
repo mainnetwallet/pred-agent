@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PRED Agent</title>
+<style>
+  :root{--bg:#0f1115;--card:#181b22;--line:#272b35;--fg:#e8eaf0;--mut:#8a90a0;--ok:#2fbf71;--warn:#e5a93d;--bad:#e5484d;--acc:#4c8dff}
+  @media (prefers-color-scheme: light){:root{--bg:#f4f5f8;--card:#fff;--line:#dfe2ea;--fg:#14161c;--mut:#667085}}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+  main{max-width:880px;margin:0 auto;padding:16px}
+  h1{font-size:18px;margin:0}
+  h2{font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--mut);margin:24px 0 8px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:10px}
+  .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .grow{flex:1}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px}
+  .stat b{display:block;font-size:20px}
+  .stat span{color:var(--mut);font-size:12px}
+  button{font:inherit;border:1px solid var(--line);background:var(--card);color:var(--fg);padding:9px 14px;border-radius:10px;cursor:pointer}
+  button.primary{background:var(--acc);border-color:var(--acc);color:#fff}
+  button.ok{background:var(--ok);border-color:var(--ok);color:#fff}
+  button.bad{background:var(--bad);border-color:var(--bad);color:#fff}
+  button:disabled{opacity:.5;cursor:default}
+  input{font:inherit;width:100%;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--fg)}
+  .tag{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;font-weight:600;border:1px solid var(--line)}
+  .paper{color:var(--ok)} .live{color:var(--bad)} .paused{color:var(--warn)}
+  .mut{color:var(--mut)} .err{color:var(--bad);min-height:1.4em}
+  #login{max-width:360px;margin:12vh auto}
+  #login input{margin-bottom:10px}
+  .hidden{display:none}
+  pre{white-space:pre-wrap;margin:0;font:13px/1.4 ui-monospace,Menlo,monospace}
+</style>
+</head>
+<body>
+<main>
+  <section id="login" class="card hidden">
+    <h1>PRED Agent</h1>
+    <p class="mut">Sign in to control the agent.</p>
+    <input id="u" placeholder="Username" autocomplete="username" autocapitalize="none">
+    <input id="p" type="password" placeholder="Password" autocomplete="current-password">
+    <button id="loginBtn" class="primary" style="width:100%">Sign in</button>
+    <p id="loginErr" class="err"></p>
+  </section>
+
+  <section id="app" class="hidden">
+    <div class="row">
+      <h1 class="grow">PRED Agent</h1>
+      <span id="mode" class="tag"></span>
+      <span id="pausedTag" class="tag paused hidden">PAUSED</span>
+      <button id="logout">Log out</button>
+    </div>
+
+    <h2>Status</h2>
+    <div class="card grid">
+      <div class="stat"><b id="exposure">-</b><span>Open exposure</span></div>
+      <div class="stat"><b id="pnl">-</b><span>Daily PnL</span></div>
+      <div class="stat"><b id="pending">-</b><span>Pending proposals</span></div>
+    </div>
+    <div class="row">
+      <button id="pauseBtn">Pause</button>
+      <button id="resumeBtn">Resume</button>
+      <span class="grow"></span>
+      <button id="panicBtn" class="bad">PANIC</button>
+    </div>
+    <p id="msg" class="err"></p>
+
+    <h2>Proposals</h2>
+    <div id="proposals"></div>
+
+    <h2>Positions</h2>
+    <div id="positions"></div>
+
+    <h2>Orders</h2>
+    <div id="orders"></div>
+
+    <h2>Limits</h2>
+    <div id="limits" class="card"></div>
+  </section>
+</main>
+
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+let token = localStorage.getItem("pred_token");
+let timer = null;
+
+function el(tag, props, ...kids) {
+  const e = document.createElement(tag);
+  Object.assign(e, props || {});
+  kids.forEach((k) => e.append(k));
+  return e;
+}
+
+async function api(path, opts = {}) {
+  const headers = { "Content-Type": "application/json" };
+  if (token) headers.Authorization = "Bearer " + token;
+  const resp = await fetch(path, { ...opts, headers });
+  let body = {};
+  try { body = await resp.json(); } catch (_) {}
+  if (resp.status === 401 && token) { signOut(); }
+  return body;
+}
+
+function signOut() {
+  token = null;
+  localStorage.removeItem("pred_token");
+  clearInterval(timer);
+  $("app").classList.add("hidden");
+  $("login").classList.remove("hidden");
+}
+
+function showApp() {
+  $("login").classList.add("hidden");
+  $("app").classList.remove("hidden");
+  refresh();
+  clearInterval(timer);
+  timer = setInterval(refresh, 5000);
+}
+
+$("loginBtn").onclick = async () => {
+  $("loginErr").textContent = "";
+  const r = await api("/v1/login", {
+    method: "POST",
+    body: JSON.stringify({ username: $("u").value, password: $("p").value }),
+  });
+  if (r.ok) {
+    token = r.data.token;
+    localStorage.setItem("pred_token", token);
+    $("p").value = "";
+    showApp();
+  } else {
+    $("loginErr").textContent = (r.error && r.error.message) || "Login failed";
+  }
+};
+$("p").addEventListener("keydown", (e) => { if (e.key === "Enter") $("loginBtn").click(); });
+$("logout").onclick = signOut;
+
+async function act(path, confirmText) {
+  if (confirmText && !confirm(confirmText)) return;
+  const r = await api(path, { method: "POST", body: "{}" });
+  $("msg").textContent = r.ok ? "" : ((r.error && r.error.message) || "Failed");
+  refresh();
+}
+$("pauseBtn").onclick = () => act("/v1/pause");
+$("resumeBtn").onclick = () => act("/v1/resume");
+$("panicBtn").onclick = () =>
+  act("/v1/panic", "PANIC: pause the agent, reject all pending proposals and cancel open orders?");
+
+function usd(v) { const n = Number(v); return isNaN(n) ? "-" : "$" + n.toFixed(2); }
+
+function proposalCard(p) {
+  const pending = p.status === "PROPOSED";
+  const head = el("div", { className: "row" },
+    el("b", { className: "grow", textContent: `${p.side.toUpperCase()} @ ${p.price_cents}c  qty ${p.quantity}` }),
+    el("span", { className: "tag", textContent: p.status }));
+  const meta = el("div", { className: "mut",
+    textContent: `${p.mode} · fixture ${p.fixture_id} · amount ${usd(p.amount_usd)} · edge ${p.edge_pp}pp · p_fair ${p.p_fair}` });
+  const card = el("div", { className: "card" }, head, meta);
+  if (p.reasons.length) card.append(el("div", { textContent: "Why: " + p.reasons.slice(0, 3).join("; ") }));
+  if (p.risks.length) card.append(el("div", { className: "mut", textContent: "Risks: " + p.risks.slice(0, 2).join("; ") }));
+  if (pending) {
+    const amt = el("input", { placeholder: "Amount USD (optional)", inputMode: "decimal", style: "max-width:170px" });
+    const ok = el("button", { className: "ok", textContent: "Approve" });
+    const no = el("button", { className: "bad", textContent: "Reject" });
+    ok.onclick = async () => {
+      const r = await api(`/v1/proposals/${p.id}/approve`, { method: "POST", body: JSON.stringify(amt.value ? { amount_usd: amt.value } : {}) });
+      $("msg").textContent = r.ok ? "" : ((r.error && r.error.message) || "Failed");
+      refresh();
+    };
+    no.onclick = async () => { await api(`/v1/proposals/${p.id}/reject`, { method: "POST", body: "{}" }); refresh(); };
+    card.append(el("div", { className: "row", style: "margin-top:8px" }, amt, ok, no));
+  }
+  return card;
+}
+
+function fillList(id, items, build, empty) {
+  const box = $(id);
+  box.replaceChildren();
+  if (!items.length) { box.append(el("div", { className: "mut", textContent: empty })); return; }
+  items.forEach((i) => box.append(build(i)));
+}
+
+async function refresh() {
+  const [st, pr, po, od, lm] = await Promise.all([
+    api("/v1/status"), api("/v1/proposals"), api("/v1/positions"), api("/v1/orders"), api("/v1/limits"),
+  ]);
+  if (!st.ok) return;
+  const s = st.data;
+  $("mode").textContent = s.mode;
+  $("mode").className = "tag " + (s.mode === "LIVE" ? "live" : "paper");
+  $("pausedTag").classList.toggle("hidden", !s.paused);
+  $("exposure").textContent = usd(s.exposure);
+  $("pnl").textContent = usd(s.daily_pnl);
+  $("pending").textContent = s.pending_proposals;
+  $("pauseBtn").disabled = s.paused;
+  $("resumeBtn").disabled = !s.paused;
+
+  fillList("proposals", pr.data || [], proposalCard, "No proposals yet.");
+  fillList("positions", po.data || [], (p) => el("div", { className: "card",
+    textContent: `${p.side} ${p.quantity} @ ${p.avg_price_cents}c · cost ${usd(p.cost_usd)} · ${p.market_id}` }), "No open positions.");
+  fillList("orders", od.data || [], (o) => el("div", { className: "card",
+    textContent: `${o.status} · ${o.side} ${o.quantity} @ ${o.price_cents}c · filled ${o.filled_qty}` }), "No orders.");
+
+  const box = $("limits");
+  box.replaceChildren();
+  (lm.data || []).forEach((l) => box.append(el("div", { className: "row" },
+    el("span", { className: "grow", textContent: l.name }),
+    el("b", { textContent: String(l.value) }),
+    el("span", { className: "mut", textContent: "max " + l.hard_max }))));
+}
+
+if (token) { showApp(); } else { $("login").classList.remove("hidden"); }
+</script>
+</body>
+</html>
