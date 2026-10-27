@@ -13,6 +13,7 @@ from pathlib import Path
 
 from sqlalchemy import Engine, create_engine, event
 from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.pool import StaticPool
 
 from .models import Base
 
@@ -62,3 +63,14 @@ def create_all_tables(engine: Engine) -> None:
 
 def new_session(session_factory: sessionmaker[Session]) -> Session:
     return session_factory()
+
+
+def create_test_engine() -> Engine:
+    """In-memory SQLite engine with all tables created. For tests."""
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    create_all_tables(engine)
+    return engine

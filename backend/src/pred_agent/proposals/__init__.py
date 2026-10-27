@@ -11,6 +11,10 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from enum import Enum
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from pred_agent.store.repository import ProposalRepo
 
 
 class ProposalStatus(str, Enum):
@@ -55,11 +59,17 @@ class Proposal:
 
 
 class ProposalService:
-    """Manages proposal lifecycle with TTL expiry sweeper."""
+    """Manages proposal lifecycle with TTL expiry sweeper.
 
-    def __init__(self, *, ttl_seconds: int = 300) -> None:
+    ``db`` attaches a repository: state is loaded on startup and every
+    mutation is written through, so proposals survive restarts.
+    """
+
+    def __init__(self, *, ttl_seconds: int = 300,
+                 db: "ProposalRepo | None" = None) -> None:
         self.ttl_seconds = ttl_seconds
-        self._proposals: dict[str, Proposal] = {}
+        self._db = db
+        self._proposals: dict[str, Proposal] = db.load_all() if db else {}
         self._locks: dict[str, object] = {}  # per-market locks placeholder
 
     def create(self, *, mode: str, advisory: bool, fixture_id: str, market_id: str,
@@ -88,7 +98,12 @@ class ProposalService:
             expires_at=datetime.now(timezone.utc) + timedelta(seconds=self.ttl_seconds),
         )
         self._proposals[prop.id] = prop
+        self._persist(prop)
         return prop
+
+    def _persist(self, prop: Proposal) -> None:
+        if self._db is not None:
+            self._db.save(prop)
 
     def get(self, proposal_id: str) -> Proposal | None:
         return self._proposals.get(proposal_id)
@@ -103,12 +118,14 @@ class ProposalService:
             return None
         if prop.is_expired():
             prop.status = ProposalStatus.EXPIRED
+            self._persist(prop)
             return None
         if new_amount_usd is not None:
             prop.amount_usd = new_amount_usd
         prop.status = ProposalStatus.APPROVED
         prop.decided_at = datetime.now(timezone.utc)
         prop.decided_via = via
+        self._persist(prop)
         return prop
 
     def reject(self, proposal_id: str, via: str = "telegram") -> Proposal | None:
@@ -118,6 +135,7 @@ class ProposalService:
         prop.status = ProposalStatus.REJECTED
         prop.decided_at = datetime.now(timezone.utc)
         prop.decided_via = via
+        self._persist(prop)
         return prop
 
     def expire_stale(self) -> list[str]:
@@ -126,5 +144,6 @@ class ProposalService:
         for prop in self._proposals.values():
             if prop.status == ProposalStatus.PROPOSED and prop.is_expired():
                 prop.status = ProposalStatus.EXPIRED
+                self._persist(prop)
                 expired.append(prop.id)
         return expired

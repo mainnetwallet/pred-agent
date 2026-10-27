@@ -11,6 +11,10 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from decimal import Decimal
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from pred_agent.store.repository import OrderRepo
 
 
 @dataclass
@@ -40,12 +44,21 @@ class PaperOrder:
 
 
 class PaperExecutor:
-    """Paper-mode executor. Simulates fills against the real book. Never calls PRED write APIs."""
+    """Paper-mode executor. Simulates fills against the real book. Never calls PRED write APIs.
 
-    def __init__(self) -> None:
-        self._orders: dict[str, PaperOrder] = {}
+    ``db`` attaches a repository: orders are loaded on startup and every
+    mutation is written through, so they survive restarts.
+    """
+
+    def __init__(self, db: "OrderRepo | None" = None) -> None:
+        self._db = db
+        self._orders: dict[str, PaperOrder] = db.load_all() if db else {}
         self._fills: list[FakeFill] = []
         self._fill_probability = Decimal("0.7")  # 70% chance of fill for marketable orders
+
+    def _persist(self, order: PaperOrder) -> None:
+        if self._db is not None:
+            self._db.save(order)
 
     def place(self, *, proposal_id: str, market_id: str, side: str,
               price_cents: Decimal, quantity: Decimal, amount_usd: Decimal,
@@ -58,10 +71,12 @@ class PaperExecutor:
             status="open",
         )
         self._orders[order.id] = order
+        self._persist(order)
 
         # Simulate immediate fill for IOC or marketable limit orders
         if order_type in ("ioc", "market") or random.random() < float(self._fill_probability):  # noqa: S311 - paper-trading simulation, not crypto
             self._simulate_fill(order)
+            self._persist(order)
 
         return order
 
@@ -82,6 +97,7 @@ class PaperExecutor:
         if order is None or order.status != "open":
             return False
         order.status = "cancelled"
+        self._persist(order)
         return True
 
     def list_orders(self) -> list[PaperOrder]:

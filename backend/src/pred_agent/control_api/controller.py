@@ -18,13 +18,17 @@ from dataclasses import asdict, is_dataclass
 from datetime import datetime, timezone
 from decimal import Decimal
 from enum import Enum
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from pred_agent.config import Settings
 from pred_agent.execution.paper_executor import PaperExecutor
-from pred_agent.positions import PositionManager
+from pred_agent.positions import Position, PositionManager
 from pred_agent.proposals import Proposal, ProposalService, ProposalStatus
 from pred_agent.rules import Rule, RulesService
+from pred_agent.store.repository import OrderRepo, PositionRepo, ProposalRepo, RuleRepo
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session, sessionmaker
 
 
 def to_jsonable(obj: Any) -> Any:  # noqa: PLR0911
@@ -45,13 +49,23 @@ def to_jsonable(obj: Any) -> Any:  # noqa: PLR0911
 
 
 class AgentController:
-    def __init__(self, settings: Settings) -> None:
+    def __init__(self, settings: Settings,
+                 db_session_factory: "sessionmaker[Session] | None" = None) -> None:
         self.settings = settings
         self.paused = False
-        self.proposals = ProposalService(ttl_seconds=settings.proposal_ttl_seconds)
-        self.executor = PaperExecutor()
-        self.positions = PositionManager()
-        self.rules = RulesService()
+        self.proposals = ProposalService(
+            ttl_seconds=settings.proposal_ttl_seconds,
+            db=ProposalRepo(db_session_factory) if db_session_factory else None,
+        )
+        self.executor = PaperExecutor(
+            db=OrderRepo(db_session_factory) if db_session_factory else None
+        )
+        self.positions = PositionManager(
+            db=PositionRepo(db_session_factory) if db_session_factory else None
+        )
+        self.rules = RulesService(
+            db=RuleRepo(db_session_factory) if db_session_factory else None
+        )
         self.limits: dict[str, float] = {
             "max_trade_usd": float(settings.limits.max_trade_usd),
             "daily_loss_usd": float(settings.limits.daily_loss_usd),
@@ -143,10 +157,124 @@ class AgentController:
                 price_cents=prop.price_cents, quantity=prop.quantity,
                 amount_usd=prop.amount_usd, order_type=prop.order_type,
             )
+            # Paper fills are assumed immediate at the proposal price, so the
+            # position exists for rule monitoring right away.
+            self.positions.open_position(
+                market_id=prop.market_id, parent_id=prop.fixture_id, side=prop.side,
+                quantity=prop.quantity, avg_price_cents=prop.price_cents,
+                cost_usd=prop.amount_usd,
+            )
         return prop
 
     def reject(self, proposal_id: str, via: str) -> Proposal | None:
         return self.proposals.reject(proposal_id, via=via)
+
+    # ── chat write intents (create PENDING only, never execute) ──
+
+    def propose_trade_from_chat(
+        self,
+        *,
+        market_id: str,
+        parent_market_id: str,
+        fixture_id: str,
+        side: str,
+        amount_usd: Decimal,
+        price_cents: Decimal,
+        created_via: str = "chat",
+    ) -> tuple[Proposal | None, str | None]:
+        """Create a PENDING trade proposal from a chat intent. Returns (proposal, error)."""
+        if self.paused:
+            return None, "agent is paused — new proposals are blocked"
+        cap = Decimal(str(self.limits["max_trade_usd"]))
+        if amount_usd <= 0 or amount_usd > cap:
+            return None, f"amount_usd must be > 0 and <= {cap}"
+        if side not in ("long", "short"):
+            return None, "side must be long or short"
+        if price_cents <= 0:
+            return None, "no live price for this market — book unavailable"
+        qty = amount_usd / (price_cents / 100)
+        est_fee = amount_usd * Decimal(250) / Decimal(10000)
+        prop = self.proposals.create(
+            mode=self.mode, advisory=False, fixture_id=fixture_id, market_id=market_id,
+            side=side, order_type="limit", price_cents=price_cents, quantity=qty,
+            amount_usd=amount_usd, est_fee_usd=est_fee, edge_pp=Decimal("0"),
+            p_fair=price_cents / 100,
+            max_suggested_usd=cap, binding_cap=None,
+            reasons=[f"requested via {created_via}"], risks=None,
+        )
+        return prop, None
+
+    def close_position_proposal(
+        self, market_id: str, via: str = "chat"
+    ) -> tuple[Proposal | None, str | None]:
+        """Create a PENDING reduce-only exit proposal for an open position."""
+        pos = self.positions.get_position(market_id)
+        if pos is None:
+            return None, f"no open position for market {market_id}"
+        exit_side = "short" if pos.side == "long" else "long"
+        price = pos.avg_price_cents
+        est_fee = pos.cost_usd * Decimal(250) / Decimal(10000)
+        prop = self.proposals.create(
+            mode=self.mode, advisory=False, fixture_id=pos.parent_id, market_id=market_id,
+            side=exit_side, order_type="limit", price_cents=price, quantity=pos.quantity,
+            amount_usd=pos.cost_usd, est_fee_usd=est_fee, edge_pp=Decimal("0"),
+            p_fair=price / 100,
+            max_suggested_usd=Decimal(str(self.limits["max_trade_usd"])),
+            binding_cap=None, reasons=[f"exit requested via {via}"], risks=None,
+        )
+        return prop, None
+
+    def create_rule_from_chat(
+        self,
+        *,
+        market_id: str,
+        kind: str,
+        trigger_type: str,
+        trigger_value: Decimal,
+        size: str = "all",
+        created_via: str = "chat",
+    ) -> tuple[Rule | None, str | None]:
+        """Create a PENDING exit rule from a chat intent. Returns (rule, error)."""
+        pos = self.positions.get_position(market_id)
+        if pos is None:
+            return None, f"no open position for market {market_id}"
+        if kind not in ("take_profit", "stop_loss"):
+            return None, f"kind must be take_profit or stop_loss (got {kind})"
+        if trigger_type not in ("profit_usd", "loss_usd", "price_cents", "profit_pct"):
+            return None, f"unsupported trigger_type {trigger_type}"
+        if trigger_value <= 0:
+            return None, "trigger_value must be > 0"
+        if trigger_type == "price_cents":
+            err = self._sane_price_trigger(pos, kind, trigger_value)
+            if err:
+                return None, err
+        if len(self.rules.list_active()) + len(self.rules.list_pending()) >= 10:
+            return None, "max 10 rules reached"
+        rule = self.rules.create(
+            market_id=market_id,
+            parent_market_id=pos.parent_id,
+            position_ref=market_id,
+            kind=kind,
+            trigger_type=trigger_type,
+            trigger_value=trigger_value,
+            size=size,
+            created_via=created_via,
+            mode=self.mode,
+        )
+        return rule, None
+
+    @staticmethod
+    def _sane_price_trigger(pos: Position, kind: str, trigger_value: Decimal) -> str | None:  # noqa: PLR0911
+        entry = pos.avg_price_cents
+        if pos.side == "long" and kind == "take_profit" and trigger_value <= entry:
+            return f"take-profit price {trigger_value} must be above entry {entry} for a long"
+        if pos.side == "long" and kind == "stop_loss" and trigger_value >= entry:
+            return f"stop-loss price {trigger_value} must be below entry {entry} for a long"
+        if pos.side == "short" and kind == "take_profit" and trigger_value >= entry:
+            return f"take-profit price {trigger_value} must be below entry {entry} for a short"
+        if pos.side == "short" and kind == "stop_loss" and trigger_value <= entry:
+            return f"stop-loss price {trigger_value} must be above entry {entry} for a short"
+        return None
 
     # ── rules ─────────────────────────────────────────────────
 

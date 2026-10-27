@@ -15,10 +15,14 @@ import logging
 import uuid
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from pred_agent.execution.paper_executor import PaperExecutor
 from pred_agent.positions import Position
+
+if TYPE_CHECKING:
+    from pred_agent.positions import PositionManager
+    from pred_agent.store.repository import RuleRepo
 
 log = logging.getLogger(__name__)
 
@@ -117,14 +121,19 @@ class Rule:
 
 
 class RulesService:
-    """In-memory rules store with lifecycle management.
+    """Rules store with lifecycle management.
 
-    In production this would be backed by the DB (RuleRow). The public API
-    is kept stable so the DB layer can be layered underneath later.
+    ``db`` attaches a repository: rules are loaded on startup and every
+    mutation is written through, so they survive restarts.
     """
 
-    def __init__(self) -> None:
-        self._rules: dict[str, Rule] = {}
+    def __init__(self, db: "RuleRepo | None" = None) -> None:
+        self._db = db
+        self._rules: dict[str, Rule] = db.load_all() if db else {}
+
+    def _persist(self, rule: Rule) -> None:
+        if self._db is not None:
+            self._db.save(rule)
 
     def create(
         self,
@@ -153,6 +162,7 @@ class RulesService:
             mode=mode,
         )
         self._rules[rule.id] = rule
+        self._persist(rule)
         log.info("rule.created id=%s kind=%s trigger=%s@%s", rule.id, kind, trigger_type, trigger_value)
         return rule
 
@@ -174,6 +184,7 @@ class RulesService:
             return None
         rule.status = STATUS_ACTIVE
         rule.confirmed_at = _now()
+        self._persist(rule)
         log.info("rule.confirmed id=%s", rule_id)
         return rule
 
@@ -182,6 +193,7 @@ class RulesService:
         if rule is None or rule.status in (STATUS_DONE, STATUS_CANCELLED, STATUS_EXPIRED, STATUS_FAILED):
             return None
         rule.status = STATUS_CANCELLED
+        self._persist(rule)
         log.info("rule.cancelled id=%s", rule_id)
         return rule
 
@@ -191,6 +203,7 @@ class RulesService:
         for rule in self._rules.values():
             if rule.status in (STATUS_ACTIVE, STATUS_PENDING):
                 rule.status = STATUS_CANCELLED
+                self._persist(rule)
                 count += 1
         if count:
             log.info("rules.cancel_all cancelled=%d", count)
@@ -203,8 +216,45 @@ class RulesService:
         for rule in self._rules.values():
             if rule.status == STATUS_PENDING and rule.expires_at and now > rule.expires_at:
                 rule.status = STATUS_EXPIRED
+                self._persist(rule)
                 count += 1
         return count
+
+    # ── monitor state transitions (fail-closed) ──────────────
+
+    def mark_blocked(self, rule: Rule, note: str) -> bool:
+        """Move an ACTIVE rule to BLOCKED (fail closed). Returns True on transition."""
+        if rule.status != STATUS_ACTIVE:
+            return False
+        rule.status = STATUS_BLOCKED
+        if rule.blocked_since is None:
+            rule.blocked_since = _now()
+        rule.last_eval_at = _now()
+        rule.last_eval_note = note
+        self._persist(rule)
+        log.warning("rule.blocked id=%s note=%s", rule.id, note)
+        return True
+
+    def mark_unblocked(self, rule: Rule) -> bool:
+        """Move a BLOCKED rule back to ACTIVE when data is fresh again."""
+        if rule.status != STATUS_BLOCKED:
+            return False
+        rule.status = STATUS_ACTIVE
+        rule.blocked_since = None
+        self._persist(rule)
+        log.info("rule.unblocked id=%s", rule.id)
+        return True
+
+    def mark_expired(self, rule: Rule, note: str) -> bool:
+        """Expire a rule whose position is gone or whose market resolved."""
+        if rule.status not in (STATUS_ACTIVE, STATUS_BLOCKED, STATUS_PENDING):
+            return False
+        rule.status = STATUS_EXPIRED
+        rule.last_eval_at = _now()
+        rule.last_eval_note = note
+        self._persist(rule)
+        log.info("rule.expired id=%s note=%s", rule.id, note)
+        return True
 
     # ── evaluation (called by monitor) ───────────────────────
 
@@ -285,8 +335,13 @@ class RulesService:
         current_price_cents: Decimal,
         executor: PaperExecutor,
         fee_rate_bps: int = 250,
+        positions: "PositionManager | None" = None,
     ) -> bool:
-        """Atomically fire a rule. Returns True if fired, False if already fired."""
+        """Atomically fire a rule. Returns True if fired, False if already fired.
+
+        On success the exit order is placed and (when ``positions`` is given)
+        the position is closed with its realized net PnL.
+        """
         async with rule._lock:
             if rule.status != STATUS_ACTIVE:
                 return False  # already fired or cancelled
@@ -299,15 +354,18 @@ class RulesService:
             if not should:
                 rule.last_eval_at = _now()
                 rule.last_eval_note = f"no trigger: {reason}"
+                self._persist(rule)
                 return False
 
             # Atomic: ACTIVE → TRIGGERED → EXECUTING
             rule.status = STATUS_TRIGGERED
             rule.triggered_at = _now()
             rule.last_eval_note = f"triggered: {reason}"
+            self._persist(rule)
             log.info("rule.triggered id=%s reason=%s", rule.id, reason)
 
             rule.status = STATUS_EXECUTING
+            self._persist(rule)
 
         # Execute outside lock — paper executor
         try:
@@ -326,10 +384,27 @@ class RulesService:
             )
             rule.order_id = order.id
             rule.status = STATUS_DONE
-            log.info("rule.done id=%s order=%s", rule.id, order.id)
+            rule.last_eval_at = _now()
+
+            realized = Decimal("0")
+            if positions is not None:
+                pnl = self.compute_pnl(
+                    position=position,
+                    current_price_cents=current_price_cents,
+                    fee_rate_bps=fee_rate_bps,
+                )
+                realized = pnl["profit_usd"]
+                positions.close_position(position.market_id, realized_pnl_usd=realized)
+                rule.last_eval_note = (
+                    f"executed at {current_price_cents}c — net PnL ${realized:.4f}"
+                )
+
+            self._persist(rule)
+            log.info("rule.done id=%s order=%s pnl=%s", rule.id, order.id, realized)
             return True
         except Exception as exc:  # noqa: BLE001
             rule.status = STATUS_FAILED
             rule.last_eval_note = f"execution failed: {type(exc).__name__}"
+            self._persist(rule)
             log.error("rule.failed id=%s exc=%s", rule.id, exc)
             return False

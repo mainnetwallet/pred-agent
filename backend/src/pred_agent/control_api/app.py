@@ -34,6 +34,8 @@ from pred_agent.events import Event, EventBus
 from pred_agent.llm import LLMRequest, OpenAICompatClient, build_llm_client
 from pred_agent.llm.chat import ChatMessage, build_chat_llm
 from pred_agent.scanner import DiscoveredParent
+from pred_agent.store.repository import ChatRepo
+from pred_agent.store.session import create_session_manager
 
 log = logging.getLogger(__name__)
 
@@ -138,20 +140,25 @@ class ChatRateLimiter:
 # ─────────────────────────────────────────────────────────────
 
 class ChatSessionStore:
-    """In-memory chat session store (Phase 8 — DB backing later)."""
+    """Chat session store — memory + optional DB persistence (Phase 8)."""
 
-    def __init__(self) -> None:
-        self._sessions: dict[str, list[ChatMessage]] = {}
+    def __init__(self, db: ChatRepo | None = None) -> None:
+        self._db = db
+        self._sessions: dict[str, list[ChatMessage]] = db.load_all() if db else {}
 
     def get_or_create(self, session_id: str | None, actor: str) -> tuple[str, list[ChatMessage]]:
         if session_id and session_id in self._sessions:
             return session_id, self._sessions[session_id]
         sid = str(uuid.uuid4())
         self._sessions[sid] = []
+        if self._db is not None:
+            self._db.save_session(sid, actor)
         return sid, []
 
     def append(self, session_id: str, message: ChatMessage) -> None:
         self._sessions.setdefault(session_id, []).append(message)
+        if self._db is not None:
+            self._db.save_message(session_id, message)
 
     def get_history(self, session_id: str) -> list[ChatMessage]:
         return self._sessions.get(session_id, [])
@@ -159,6 +166,8 @@ class ChatSessionStore:
     def clear(self, session_id: str) -> bool:
         if session_id in self._sessions:
             self._sessions.pop(session_id)
+            if self._db is not None:
+                self._db.clear(session_id)
             return True
         return False
 
@@ -221,12 +230,19 @@ class FixtureCache:
             dhaka_tz = timezone(timedelta(hours=6))
             kickoff_dhaka = kickoff.astimezone(dhaka_tz).isoformat() if kickoff else None
 
+            team_names = {
+                t.get("team_id"): t.get("team_name") or t.get("name")
+                for t in (f.team_data or []) if t.get("team_id")
+            }
+            home_id = fix.get("home_team_id")
+            away_id = fix.get("away_team_id")
+
             result.append({
                 "id": fix.get("fixture_id") or f.parent_market_id,
                 "parent_market_id": f.parent_market_id,
-                "home_team": fix.get("home_team_id"),
-                "away_team": fix.get("away_team_id"),
-                "league": None,        # not in discovery feed
+                "home_team": team_names.get(home_id) or home_id,
+                "away_team": team_names.get(away_id) or away_id,
+                "league": fix.get("league_name"),        # may be absent in discovery feed
                 "kickoff": kickoff.isoformat() if kickoff else None,
                 "kickoff_dhaka": kickoff_dhaka,
                 "state": fstate,
@@ -261,9 +277,10 @@ def create_app() -> FastAPI:  # noqa: PLR0915
         secret=settings.session_secret,
         ttl_hours=settings.session_ttl_hours,
     )
-    controller = AgentController(settings)
+    engine, session_factory = create_session_manager(settings.database_url)
+    controller = AgentController(settings, db_session_factory=session_factory)
     ws_manager = ConnectionManager()
-    chat_sessions = ChatSessionStore()
+    chat_sessions = ChatSessionStore(db=ChatRepo(session_factory))
     chat_rl = ChatRateLimiter(max_per_window=10, window_s=60)
     fixture_cache = FixtureCache()
 
@@ -275,6 +292,8 @@ def create_app() -> FastAPI:  # noqa: PLR0915
     app.state.controller = controller
     app.state.ws_manager = ws_manager
     app.state.fixture_cache = fixture_cache
+    app.state.session_factory = session_factory
+    app.state.book_feed = None  # set when background tasks start (BookFeed)
 
     # ── event bus → WS broadcast task ────────────────────────
 
@@ -597,10 +616,11 @@ def create_app() -> FastAPI:  # noqa: PLR0915
     async def close_position(market_id: str, authorization: str | None = Header(None)) -> Any:
         if _verify_auth(authorization) is None:
             return _unauth()
-        pos = controller.positions.get_position(market_id)
-        if pos is None:
-            return error_response("not_found", "position not found", 404)
-        return envelope(ok=True, data={"message": "Close proposal created (coming in Phase C)", "market_id": market_id})
+        prop, err = controller.close_position_proposal(market_id, via="app")
+        if prop is None:
+            return error_response("not_found", err or "position not found", 404)
+        await bus.publish(Event("proposal_created", to_jsonable(prop)))
+        return envelope(ok=True, data=to_jsonable(prop))
 
     @app.get("/v1/limits")
     async def get_limits(authorization: str | None = Header(None)) -> Any:
