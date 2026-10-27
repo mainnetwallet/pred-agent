@@ -16,6 +16,7 @@ import { useUIStore, useProposalsStore, useAuthStore } from "../store/index";
 import { Colors, useTheme, useThemedStyles } from "../utils/theme";
 import { api } from "../services/api";
 import { StatusBanner, MoneyDisplay, OfflineBadge } from "../components/common";
+import { FixtureSummary } from "../types/api";
 
 export const HomeScreen: React.FC = () => {
   const c = useTheme();
@@ -23,6 +24,7 @@ export const HomeScreen: React.FC = () => {
   const { setStatus, mode, paused, feedsOk, balance, exposure, dailyPnl } = useUIStore();
   const { proposals, setProposals } = useProposalsStore();
   const [refreshing, setRefreshing] = useState(false);
+  const [fixtures, setFixtures] = useState<FixtureSummary[]>([]);
   const navigation = useNavigation<any>();
   const { logout } = useAuthStore();
 
@@ -47,6 +49,10 @@ export const HomeScreen: React.FC = () => {
       const proposalsResp = await api.getProposals("pending");
       if (proposalsResp.ok && proposalsResp.data) {
         setProposals(proposalsResp.data);
+      }
+      const fixturesResp = await api.getFixtures("live");
+      if (fixturesResp.ok && fixturesResp.data) {
+        setFixtures(fixturesResp.data);
       }
     } catch {
       // error handled by stale badge
@@ -111,7 +117,28 @@ export const HomeScreen: React.FC = () => {
         </View>
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Live Fixtures</Text>
-          <ActivityIndicator size="small" color={c.textSecondary} animating={refreshing} />
+          {refreshing && fixtures.length === 0 ? (
+            <ActivityIndicator size="small" color={c.textSecondary} />
+          ) : fixtures.length === 0 ? (
+            <Text style={styles.empty}>No live fixtures right now</Text>
+          ) : (
+            <FlatList
+              data={fixtures}
+              keyExtractor={(item) => item.id}
+              renderItem={({ item }) => (
+                <View style={styles.fixtureRow}>
+                  <Text style={styles.fixtureName}>
+                    {item.home_team ?? "?"} vs {item.away_team ?? "?"}
+                  </Text>
+                  <Text style={styles.fixtureStatus}>
+                    {item.home_score != null
+                      ? `${item.home_score}–${item.away_score ?? 0}${item.minute != null ? ` · ${item.minute}′` : ""}`
+                      : (item.game_status ?? "LIVE")}
+                  </Text>
+                </View>
+              )}
+            />
+          )}
         </View>
       </View>
     </View>
