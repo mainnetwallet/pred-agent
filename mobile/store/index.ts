@@ -53,6 +53,12 @@ export const useAuthStore = create<AuthStore>()(
     {
       name: "auth-storage",
       storage: createJSONStorage(() => secureStorage),
+      // An older install may have persisted serverUrl: "" — never let an empty value
+      // override the build-time default.
+      merge: (persisted, current) => {
+        const saved = (persisted ?? {}) as Partial<AuthStore>;
+        return { ...current, ...saved, serverUrl: saved.serverUrl || current.serverUrl };
+      },
     }
   )
 );

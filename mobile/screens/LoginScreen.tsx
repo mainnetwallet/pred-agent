@@ -1,6 +1,6 @@
 // Login screen — server URL + username + password (fixed in the server's env).
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   Text,
   TextInput,
@@ -13,11 +13,13 @@ import {
 import { useAuthStore } from "../store/index";
 import { api } from "../services/api";
 import { wsClient } from "../services/websocket";
-import { DEFAULT_USERNAME } from "../utils/defaults";
+import { DEFAULT_SERVER_URL, DEFAULT_USERNAME } from "../utils/defaults";
 
 export const LoginScreen: React.FC = () => {
   const { serverUrl, setServerUrl, setToken } = useAuthStore();
-  const [url, setUrl] = useState(serverUrl);
+  const [url, setUrl] = useState(serverUrl || DEFAULT_SERVER_URL);
+  // Storage hydrates asynchronously; keep the field in sync once it does.
+  useEffect(() => setUrl(serverUrl || DEFAULT_SERVER_URL), [serverUrl]);
   const [username, setUsername] = useState(DEFAULT_USERNAME);
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
