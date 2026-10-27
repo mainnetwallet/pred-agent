@@ -12,7 +12,8 @@ refresh_threshold_seconds: 300
 scan_interval_seconds: 30
 discover_limit: 50
 discover_max_rps: 10
-omit_inactive_with_redeemed_on_before: null  # set to current UTC RFC3339 at scan start
+omit_inactive_with_redeemed_on_before: null  # explicit fixed UTC RFC3339 cutoff (overrides discover_omit_days)
+discover_omit_days: 3     # auto cutoff = scan start - N days; 0 disables
 
 min_edge_pp: 3.0          # advisory mode doubles to 6.0
 kelly_fraction: 0.25      # advisory mode halves result

@@ -78,3 +78,15 @@ def test_last_scan_stats_recorded():
     assert st["kept"] == 1
     assert st["families"] == {"moneyline": 1, "spread": 1}
     assert st["error"] is None
+
+
+def test_auto_cutoff_is_rfc3339_utc_and_explicit_overrides() -> None:
+    import re
+
+    sc = Scanner(http_client=httpx.Client(), base_url="https://example.test")
+    sc._omit_cutoff, sc._omit_days = None, 3
+    assert re.fullmatch(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ", sc._resolve_cutoff() or "")
+    sc._omit_days = 0
+    assert sc._resolve_cutoff() is None
+    sc._omit_cutoff = "2026-10-20T00:00:00Z"
+    assert sc._resolve_cutoff() == "2026-10-20T00:00:00Z"

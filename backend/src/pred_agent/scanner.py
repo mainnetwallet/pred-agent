@@ -46,6 +46,8 @@ class Scanner:
         self._discover_limit = settings.discover_limit
         self._max_rps = settings.discover_max_rps
         self._omit_cutoff = settings.omit_inactive_with_redeemed_on_before
+        self._omit_days = settings.discover_omit_days
+        self._scan_cutoff: str | None = self._omit_cutoff
         self._league_allowlist = settings.league_allowlist
         self._http = http_client or httpx.Client(timeout=httpx.Timeout(30.0))
         self._last_request_time: float | None = None
@@ -64,11 +66,13 @@ class Scanner:
         """
         results: list[DiscoveredParent] = []
         offset = 0
+        self._scan_cutoff = self._resolve_cutoff()
         stats: dict[str, Any] = {
             "pages": 0, "total": None, "seen": 0, "families": {}, "moneyline_statuses": {},
             "dropped_league": 0, "dropped_no_fixture": 0, "dropped_no_active_child": 0,
-            "kept": 0, "error": None,
+            "kept": 0, "error": None, "cutoff": None,
         }
+        stats["cutoff"] = self._scan_cutoff
         self.last_scan = stats
         while True:
             try:
@@ -203,6 +207,17 @@ class Scanner:
     # Internals
     # ------------------------------------------------------------------ #
 
+    def _resolve_cutoff(self) -> str | None:
+        """Fixed cutoff for one scan: explicit setting, else now minus discover_omit_days (UTC RFC3339)."""
+        if self._omit_cutoff:
+            return self._omit_cutoff
+        if self._omit_days <= 0:
+            return None
+        from datetime import datetime, timedelta, timezone
+
+        cutoff = datetime.now(timezone.utc) - timedelta(days=self._omit_days)
+        return cutoff.strftime("%Y-%m-%dT%H:%M:%SZ")
+
     def _fetch_page(self, offset: int) -> dict[str, Any]:
         """Fetch one discovery page with rate limiting."""
         max_retries = 5
@@ -213,8 +228,8 @@ class Scanner:
                 "limit": str(self._discover_limit),
                 "offset": str(offset),
             }
-            if self._omit_cutoff:
-                params["omit_inactive_with_redeemed_on_before"] = self._omit_cutoff
+            if self._scan_cutoff:
+                params["omit_inactive_with_redeemed_on_before"] = self._scan_cutoff
             resp = self._http.get(f"{self._base_url}/api/v1/market-discovery/discover", params=params)
             if resp.status_code == 429:
                 retry_after = resp.headers.get("Retry-After")

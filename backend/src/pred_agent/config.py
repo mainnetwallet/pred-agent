@@ -74,6 +74,8 @@ class Settings(BaseSettings):
     discover_limit: int = 50
     discover_max_rps: int = 10
     omit_inactive_with_redeemed_on_before: str | None = None
+    # When no explicit cutoff is set, hide markets settled more than N days ago (0 disables).
+    discover_omit_days: int = 3
 
     # Strategy / risk
     min_edge_pp: float = 3.0
