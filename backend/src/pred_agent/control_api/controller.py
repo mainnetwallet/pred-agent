@@ -224,7 +224,7 @@ class AgentController:
         )
         return prop, None
 
-    def create_rule_from_chat(
+    def create_rule_from_chat(  # noqa: PLR0911
         self,
         *,
         market_id: str,
