@@ -186,8 +186,8 @@ class JwtAuth:
     def _extract_refresh_cookie(self, resp: httpx.Response) -> str:
         """Extract refresh_token from Set-Cookie header."""
         cookie = resp.headers.get("Set-Cookie", "")
-        for part in cookie.split(";"):
-            part = part.strip()
+        for raw_part in cookie.split(";"):
+            part = raw_part.strip()
             if part.startswith("refresh_token="):
                 return part.split("=", 1)[1]
         return ""
@@ -208,6 +208,6 @@ class JwtAuth:
             exp = data.get("exp")
             if exp:
                 return datetime.fromtimestamp(exp, tz=timezone.utc)
-        except Exception:
+        except Exception:  # noqa: S110 - malformed token => treat as no expiry
             pass
         return None

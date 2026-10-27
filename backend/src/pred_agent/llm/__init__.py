@@ -1,5 +1,5 @@
 """llm package re-export."""
 
-from .client import LLMClient, LLMRequest, LLMResponse, DummyLLMClient
+from .client import DummyLLMClient, LLMClient, LLMRequest, LLMResponse
 
 __all__ = ["LLMClient", "LLMRequest", "LLMResponse", "DummyLLMClient"]

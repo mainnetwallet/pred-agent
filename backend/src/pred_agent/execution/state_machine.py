@@ -20,7 +20,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any
 
 
 class OrderState(str, Enum):
@@ -144,7 +143,6 @@ class OrderStateMachine:
         if new_state not in LEGAL_TRANSITIONS.get(order.state, set()):
             # Illegal transition — fail closed
             return None
-        old_state = order.state
         order.state = new_state
         order.updated_at = datetime.now(timezone.utc)
         # Persist happens here (DB write in production); then side effects.

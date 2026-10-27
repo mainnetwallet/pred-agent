@@ -27,7 +27,7 @@ CANARY_PATTERNS: list[re.Pattern[str]] = [
     re.compile(r"PRIVATE_KEY=\S+"),
 ]
 
-REDACTION_TOKEN = "[REDACTED]"
+REDACTION_TOKEN = "[REDACTED]"  # noqa: S105 - placeholder text, not a secret
 
 
 def redact(text: str) -> str:

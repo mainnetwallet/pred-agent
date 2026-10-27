@@ -10,19 +10,16 @@ Grounded in kit/07_CONTROL_API.md.
 
 from __future__ import annotations
 
-import asyncio
 import json
-import time
 from contextlib import asynccontextmanager
 from typing import Any
 
-from fastapi import FastAPI, Header, HTTPException, Query, WebSocket, WebSocketDisconnect, status
+from fastapi import FastAPI, Header, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
 
 from pred_agent.config import load_settings
 from pred_agent.control_api.auth import DeviceAuth
-from pred_agent.events import Event, EventBus
-
+from pred_agent.events import EventBus
 
 # ---------------------------------------------------------------------------
 # Response envelope
@@ -58,7 +55,9 @@ def create_app() -> FastAPI:
     auth = DeviceAuth()
 
     app = FastAPI(title="PRED Control API")
+    app.state.settings = settings
     app.state.auth = auth
+    app.state.bus = bus
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -166,7 +165,7 @@ _app_instance: FastAPI | None = None
 
 
 def get_app() -> FastAPI:
-    global _app_instance
+    global _app_instance  # noqa: PLW0603 - lazy singleton
     if _app_instance is None:
         _app_instance = create_app()
     return _app_instance

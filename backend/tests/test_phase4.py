@@ -7,7 +7,11 @@ from decimal import Decimal
 import pytest
 
 from pred_agent.execution import (
-    LiveExecutor, LiveOrderIntent, OrderState, OrderRecord, OrderStateMachine,
+    LiveExecutor,
+    LiveOrderIntent,
+    OrderRecord,
+    OrderState,
+    OrderStateMachine,
 )
 from pred_agent.execution.state_machine import LEGAL_TRANSITIONS
 

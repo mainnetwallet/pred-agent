@@ -13,7 +13,6 @@ Rules:
 
 from __future__ import annotations
 
-import json
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any

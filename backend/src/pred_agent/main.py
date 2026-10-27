@@ -12,7 +12,6 @@ import signal
 import sys
 
 from pred_agent.config import load_settings
-from pred_agent.events import EventBus
 from pred_agent.util.redaction import install_redaction
 
 

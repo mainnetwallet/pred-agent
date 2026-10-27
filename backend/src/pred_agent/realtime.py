@@ -6,6 +6,7 @@ Grounded in kit/02_PRED_API_SPEC.md section 7 and kit/03_ARCHITECTURE.md section
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 from dataclasses import dataclass
 from decimal import Decimal
@@ -15,6 +16,8 @@ import httpx
 from pred_agent.book import BookSnapshot, normalize_book
 from pred_agent.config import load_settings
 from pred_agent.transport.protocol import PredTransport
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -79,7 +82,7 @@ class BookFeed:
             if raw:
                 return self._normalize_and_cache(market_id, raw, ws_dollars=False)
         except Exception:
-            pass
+            logger.debug("unauthenticated fetch failed; falling back to authenticated transport", exc_info=True)
         # Fall back to authenticated transport
         try:
             raw = self.transport.get(path)
@@ -157,7 +160,8 @@ class BookFeed:
                 return  # drop messages without market_id
             self._normalize_and_cache(market_id, data, ws_dollars=True)
         except Exception:
-            pass  # never crash the feed on a bad message
+            # never crash the feed on a bad message
+            logger.debug("dropped malformed feed message", exc_info=True)
 
     # ------------------------------------------------------------------ #
     # CLOB poller

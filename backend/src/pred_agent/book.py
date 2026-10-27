@@ -134,25 +134,25 @@ def normalize_book(raw: dict, market_id: str, *, ws_dollars: bool = False) -> Bo
 
     bids = [
         BookLevel(
-            price_cents=to_cents(l.get("price")),
-            quantity=Decimal(str(l.get("quantity", "0"))),
-            order_count=l.get("order_count"),
-            total_usd=Decimal(str(l["total_usd"])) if l.get("total_usd") is not None else None,
+            price_cents=to_cents(lvl.get("price")),
+            quantity=Decimal(str(lvl.get("quantity", "0"))),
+            order_count=lvl.get("order_count"),
+            total_usd=Decimal(str(lvl["total_usd"])) if lvl.get("total_usd") is not None else None,
         )
-        for l in bids_raw
+        for lvl in bids_raw
     ]
     asks = [
         BookLevel(
-            price_cents=to_cents(l.get("price")),
-            quantity=Decimal(str(l.get("quantity", "0"))),
-            order_count=l.get("order_count"),
-            total_usd=Decimal(str(l["total_usd"])) if l.get("total_usd") is not None else None,
+            price_cents=to_cents(lvl.get("price")),
+            quantity=Decimal(str(lvl.get("quantity", "0"))),
+            order_count=lvl.get("order_count"),
+            total_usd=Decimal(str(lvl["total_usd"])) if lvl.get("total_usd") is not None else None,
         )
-        for l in asks_raw
+        for lvl in asks_raw
     ]
     # REST: bids desc, asks asc. WS may not be sorted — sort defensively.
-    bids.sort(key=lambda l: l.price_cents, reverse=True)
-    asks.sort(key=lambda l: l.price_cents)
+    bids.sort(key=lambda lvl: lvl.price_cents, reverse=True)
+    asks.sort(key=lambda lvl: lvl.price_cents)
 
     ltp = None
     if raw.get("ltp") is not None:

@@ -1,10 +1,14 @@
 """execution package."""
 
-from .paper_executor import PaperExecutor, FakeFill, PaperOrder
-from .state_machine import (
-    OrderState, OrderRecord, FillRecord, OrderStateMachine, LEGAL_TRANSITIONS,
-)
 from .live_executor import LiveExecutor, LiveOrderIntent
+from .paper_executor import FakeFill, PaperExecutor, PaperOrder
+from .state_machine import (
+    LEGAL_TRANSITIONS,
+    FillRecord,
+    OrderRecord,
+    OrderState,
+    OrderStateMachine,
+)
 
 __all__ = [
     "PaperExecutor", "FakeFill", "PaperOrder",

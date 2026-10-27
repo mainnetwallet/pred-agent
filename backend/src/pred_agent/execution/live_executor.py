@@ -10,26 +10,22 @@ Never resends with a new salt; uncertain outcomes go to UNKNOWN and are reconcil
 
 from __future__ import annotations
 
-import os
 import secrets
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any
 
-from pred_agent.book import BookSnapshot, SlippageWalk
 from pred_agent.config import load_settings
 from pred_agent.execution.state_machine import (
-    OrderState, OrderRecord, FillRecord, OrderStateMachine,
+    OrderRecord,
+    OrderState,
+    OrderStateMachine,
 )
 from pred_agent.signer.eip712 import sign_order
 from pred_agent.transport.protocol import PredTransport, PredTransportError
-from pred_agent.util.decimals import (
-    cents_to_share_price, dec, money_usd, shares_to_quantity,
-    validate_opening_notional, validate_quantity,
-)
 from pred_agent.util.redaction import redact
-from pred_agent.util.units import price_cents_to_wei, shares_to_wei
 from pred_agent.util.time import CLOCK
+from pred_agent.util.units import price_cents_to_wei, shares_to_wei
 
 
 @dataclass

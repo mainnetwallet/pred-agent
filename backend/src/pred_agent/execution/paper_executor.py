@@ -6,8 +6,8 @@ The live Executor is constructed only in Phase 4 when LIVE_TRADING=true.
 
 from __future__ import annotations
 
-import uuid
 import random
+import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -60,7 +60,7 @@ class PaperExecutor:
         self._orders[order.id] = order
 
         # Simulate immediate fill for IOC or marketable limit orders
-        if order_type in ("ioc", "market") or random.random() < float(self._fill_probability):
+        if order_type in ("ioc", "market") or random.random() < float(self._fill_probability):  # noqa: S311 - paper-trading simulation, not crypto
             self._simulate_fill(order)
 
         return order

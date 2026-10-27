@@ -5,7 +5,7 @@ No network calls — uses mock data.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 from pred_agent.execution import PaperExecutor
@@ -15,7 +15,6 @@ from pred_agent.proposals import ProposalService, ProposalStatus
 from pred_agent.reports import Reports
 from pred_agent.risk import RiskEngine
 from pred_agent.strategy import Strategy
-
 
 # ---------------------------------------------------------------------------
 # Risk: vetoes and Kelly sizing
