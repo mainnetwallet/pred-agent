@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
-import logging
+import json
 import time
 from base64 import urlsafe_b64decode, urlsafe_b64encode
 from dataclasses import dataclass
@@ -20,8 +20,6 @@ from dataclasses import dataclass
 import httpx
 
 from ..signer.eip712 import sign_clob_auth
-
-log = logging.getLogger(__name__)
 
 
 @dataclass
@@ -75,19 +73,14 @@ class ClobAuth:
         )
 
     def ensure_credentials(self, nonce: int = 0) -> ClobCredentials:
-        """Get L2 credentials for an EXISTING PRED account.
+        """Recover already-issued L2 credentials for an EXISTING PRED account.
 
-        Derive credentials first. If an eligible existing account has not yet been issued L2
-        credentials, the documented L1 endpoint can issue them without an aggregator key.
-        Never send an aggregator key or retry with one: that path creates a new account/Safe
-        when the EOA is not already eligible.
+        The official CLOB documentation does not define any derive error that authorizes an
+        automatic create fallback. In particular, invalid signatures, invalid authentication,
+        permission failures, and unknown responses must retain their original error. Credential
+        creation is an explicit operation via ``create_credentials``; it is never retried here.
         """
-        try:
-            return self.derive_credentials(nonce)
-        except httpx.HTTPStatusError as exc:
-            if exc.response.status_code not in (400, 401, 403, 404):
-                raise
-        return self.create_credentials(nonce)
+        return self.derive_credentials(nonce)
 
     def create_credentials(self, nonce: int = 0) -> ClobCredentials:
         """L1: POST /clob/auth/api-key for an already eligible EOA."""
@@ -100,7 +93,7 @@ class ClobAuth:
             "PRED_NONCE": str(nonce),
         }
         resp = self._http.post(f"{self._base_url}/clob/auth/api-key", headers=headers)
-        if resp.status_code == 400 and "nonce_already_used" in resp.text:
+        if resp.status_code == 400 and _response_error_code(resp) == "nonce_already_used":
             # nonce already used — derive with same nonce, fresh signature
             return self.derive_credentials(nonce)
         resp.raise_for_status()
@@ -174,3 +167,17 @@ class ClobAuth:
     @property
     def credentials(self) -> ClobCredentials | None:
         return self._credentials
+
+
+def _response_error_code(response: httpx.Response) -> str | None:
+    """Extract only a structured, non-secret PRED error code for branching/diagnostics."""
+    try:
+        data = response.json()
+    except (ValueError, json.JSONDecodeError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    error = data.get("error") or data.get("code")
+    if isinstance(error, dict):
+        error = error.get("code") or error.get("message")
+    return str(error) if isinstance(error, str) else None

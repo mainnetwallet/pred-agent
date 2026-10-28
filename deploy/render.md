@@ -127,3 +127,12 @@ Render → Environment → `ADMIN_PASSWORD` update → redeploy. Purono sob logi
 4. Alembic migration confirm koro: `alembic upgrade head` startup e automatically cholbe.
 5. PAPER → LIVE checklist complete koro (README.md section 8 dekho).
 6. `docker-compose.yml`/Tailscale option private VPS deploy er jonno ache.
+
+### CLOB credential issuance (operator-only)
+
+`ensure_credentials()` and service startup only recover already-issued credentials. They do
+not silently issue credentials or create accounts. For an existing eligible primary EOA,
+run `backend/scripts/issue_clob_credentials.py` manually with
+`--confirm-existing-account`; the command prints a warning and sends no partner key.
+PRED may still return `401 invalid_auth` or `aggregator_key_required` if the account is not
+eligible. Do not retry by enabling partner-key or account/Safe setup paths.

@@ -204,7 +204,8 @@ def setup_live(
     try:
         auth.sync_clock()
         if auth.credentials is None:
-            # Existing account: derive, else create L2 creds for it (never a new account/quota).
+            # Startup only recovers already-issued credentials; creation is explicit and
+            # cannot silently turn an ineligible EOA into a new account.
             (getattr(auth, "ensure_credentials", None) or auth.derive_credentials)(0)
         status = transport.account_status()
     except Exception as exc:  # noqa: BLE001

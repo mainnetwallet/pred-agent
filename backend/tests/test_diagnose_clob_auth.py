@@ -31,9 +31,10 @@ def test_unknown_eoa_report_and_no_partner_key_sent() -> None:
     auth = _auth(handler)
     report = diagnose(auth, auth._eoa_address)
     out = render(report)
-    assert "aggregator_key_required" in out and "does not treat this EOA" in out
+    assert "aggregator_key_required" in out and "existing CLOB credentials were not recovered" in out
     assert all("x-aggregator-api-key" not in {k.lower() for k in r.headers} for r in seen)
     assert KEY not in out
+    assert [r.url.path for r in seen] == ["/clob/time", "/clob/auth/derive-api-key"]
 
 
 def test_eligible_account_reported_ok() -> None:
@@ -43,4 +44,4 @@ def test_eligible_account_reported_ok() -> None:
         return httpx.Response(200, json={"apiKey": "k", "secret": "c2Vj", "passphrase": "p"})
 
     auth = _auth(handler)
-    assert "CLOB auth works" in render(diagnose(auth, auth._eoa_address))
+    assert "recoverable existing CLOB credentials" in render(diagnose(auth, auth._eoa_address))

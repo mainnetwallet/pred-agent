@@ -32,22 +32,48 @@ def test_aggregator_key_required_never_retries_with_a_partner_key() -> None:
     with pytest.raises(httpx.HTTPStatusError):
         _auth(httpx.MockTransport(handler)).ensure_credentials(0)
 
-    assert [request.url.path for request in seen] == [
-        "/clob/auth/derive-api-key",
-        "/clob/auth/api-key",
-    ]
+    assert [request.url.path for request in seen] == ["/clob/auth/derive-api-key"]
     assert all("x-aggregator-api-key" not in request.headers for request in seen)
 
 
-def test_eligible_existing_account_can_issue_l2_credentials() -> None:
+@pytest.mark.parametrize(
+    ("status", "code"),
+    [
+        (400, "invalid_l1"),
+        (401, "invalid_auth"),
+        (403, "permission_denied"),
+        (404, "not_found"),
+        (503, "temporary_failure"),
+    ],
+)
+def test_derive_failures_preserve_error_and_never_issue_credentials(
+    status: int, code: str
+) -> None:
+    seen: list[httpx.Request] = []
+
     def handler(request: httpx.Request) -> httpx.Response:
-        if request.url.path.endswith("derive-api-key"):
-            return httpx.Response(401, json={"error": "invalid_auth"})
+        seen.append(request)
+        return httpx.Response(status, json={"error": code})
+
+    with pytest.raises(httpx.HTTPStatusError) as raised:
+        _auth(httpx.MockTransport(handler)).ensure_credentials(0)
+
+    assert raised.value.response.status_code == status
+    assert raised.value.response.json()["error"] == code
+    assert [request.url.path for request in seen] == ["/clob/auth/derive-api-key"]
+    assert all("x-aggregator-api-key" not in request.headers for request in seen)
+
+
+def test_explicit_credential_creation_for_eligible_account_has_no_partner_key() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.method == "POST"
+        assert request.url.path == "/clob/auth/api-key"
+        assert "x-aggregator-api-key" not in request.headers
         return httpx.Response(
             200, json={"apiKey": "clob-key", "secret": "c2VjcmV0", "passphrase": "pass"}
         )
 
-    credentials = _auth(httpx.MockTransport(handler)).ensure_credentials(0)
+    credentials = _auth(httpx.MockTransport(handler)).create_credentials(0)
     assert credentials.api_key == "clob-key"
 
 

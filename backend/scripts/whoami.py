@@ -51,7 +51,7 @@ def main() -> int:
         )
         try:
             auth.sync_clock()
-            auth.create_credentials(nonce=0)
+            auth.derive_credentials(nonce=0)
             status = transport.account_status() if (transport := ClobTransport(auth)) else {}
             safe = status.get("proxy_wallet_address", "unknown")
             trading = bool(status.get("is_enabled_trading", False))
