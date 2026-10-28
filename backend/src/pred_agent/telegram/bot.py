@@ -8,7 +8,6 @@ ignored. If either is missing the bot does not start (fail closed).
 from __future__ import annotations
 
 import asyncio
-
 import logging
 from decimal import Decimal, InvalidOperation
 from typing import Any

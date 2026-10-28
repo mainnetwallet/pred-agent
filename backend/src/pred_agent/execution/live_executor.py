@@ -141,7 +141,7 @@ class LiveExecutor:
     # Public entry point: place a live order from an approved proposal
     # ------------------------------------------------------------------ #
 
-    def place_from_proposal(
+    def place_from_proposal(  # noqa: PLR0911
         self,
         *,
         proposal_id: str,
@@ -164,6 +164,11 @@ class LiveExecutor:
             self.last_abort_reason = reason
             return None
 
+        maker = self.proxy_address
+        if maker is None:  # unreachable after revalidation; keeps the type honest
+            self.last_abort_reason = "maker Safe (proxy wallet) address unknown"
+            return None
+
         # The docs require `amount` to equal the side-aware notional exactly: never trust the
         # caller's figure.
         intent.amount_usd = order_amount_usd(intent.side, intent.price_cents, intent.quantity)
@@ -179,7 +184,7 @@ class LiveExecutor:
             chain_id=self.chain_id,
             verifying_contract=intent.contract_address,
             salt=salt,
-            maker=self.proxy_address,    # user's Safe (proxy wallet)
+            maker=maker,                 # user's Safe (proxy wallet)
             signer=self.eoa_address,     # EOA
             price=price_wei,
             quantity=quantity_wei,

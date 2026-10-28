@@ -300,12 +300,13 @@ def _controller(monkeypatch, executor: LiveExecutor, *, fee: int | None = 250, a
 
 
 def _proposal(ctl, **over: Any):
-    args: dict[str, Any] = dict(
-        mode="LIVE", advisory=False, fixture_id="fx1", market_id=MARKET, side="long", order_type="limit",
-        price_cents=Decimal("52"), quantity=Decimal("3.8"), amount_usd=Decimal("1.98"),
-        est_fee_usd=Decimal("0.04"), edge_pp=Decimal("6"), p_fair=Decimal("0.58"),
-        max_suggested_usd=Decimal("2"), binding_cap=None, reasons=["requested via chat"],
-    )
+    args: dict[str, Any] = {
+        "mode": "LIVE", "advisory": False, "fixture_id": "fx1", "market_id": MARKET, "side": "long",
+        "order_type": "limit", "price_cents": Decimal("52"), "quantity": Decimal("3.8"),
+        "amount_usd": Decimal("1.98"), "est_fee_usd": Decimal("0.04"), "edge_pp": Decimal("6"),
+        "p_fair": Decimal("0.58"), "max_suggested_usd": Decimal("2"), "binding_cap": None,
+        "reasons": ["requested via chat"],
+    }
     args.update(over)
     return ctl.proposals.create(**args)
 

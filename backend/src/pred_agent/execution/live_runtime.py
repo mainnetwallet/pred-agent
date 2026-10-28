@@ -56,7 +56,7 @@ def make_book_provider(host: str, *, timeout_s: float = 8.0) -> Callable[[str, s
     """
     base = host.rstrip("/")
 
-    def provider(parent_market_id: str, market_id: str) -> BookSnapshot | None:
+    def provider(parent_market_id: str, market_id: str) -> BookSnapshot | None:  # noqa: PLR0911
         url = f"{base}/api/v1/order/{parent_market_id}/orderbook/{market_id}"
         try:
             resp = httpx.get(url, params={"depth": 10, "include_metadata": "true"}, timeout=timeout_s)
