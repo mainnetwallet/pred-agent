@@ -8,11 +8,13 @@ ignored. If either is missing the bot does not start (fail closed).
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 import time
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
+from sqlalchemy import text
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.error import Conflict, TelegramError
 from telegram.ext import (
@@ -199,14 +201,57 @@ def _polling_error(exc: TelegramError) -> None:
     log.warning("telegram polling error: %s: %s", type(exc).__name__, exc)
 
 
-async def start_bot(settings: Settings, controller: AgentController) -> BotApp | None:
-    """Start polling. Never raises: a bad token must not take the web service down."""
+class _LeaderLock:
+    """Postgres advisory lock so only ONE instance of this service polls Telegram.
+
+    Render deploys overlap: the new instance starts while the old one is still polling with the
+    same bot token, and Telegram answers ``Conflict: terminated by other getUpdates request``.
+    The old instance holds the lock until it exits, so the new one just waits for it.
+    Non-Postgres databases (tests, local SQLite) and any DB error fail OPEN (poll as before).
+    """
+
+    def __init__(self, engine: Any | None, token: str) -> None:
+        self._engine = engine
+        self._key = int.from_bytes(hashlib.sha256(token.encode()).digest()[:8], "big") & 0x7FFFFFFFFFFFFFFF
+        self._conn: Any = None
+
+    def try_acquire(self) -> bool:
+        eng = self._engine
+        if eng is None or eng.dialect.name != "postgresql":
+            return True
+        try:
+            if self._conn is None:
+                self._conn = eng.connect()
+            got = bool(self._conn.execute(text("SELECT pg_try_advisory_lock(:k)"), {"k": self._key}).scalar())
+            self._conn.commit()  # the lock is session-level and survives the commit
+            return got
+        except Exception:  # noqa: BLE001 - never block the bot on a lock problem
+            log.warning("telegram leader lock unavailable; polling without it", exc_info=True)
+            return True
+
+    def release(self) -> None:
+        conn, self._conn = self._conn, None
+        if conn is None:
+            return
+        try:
+            conn.execute(text("SELECT pg_advisory_unlock(:k)"), {"k": self._key})
+            conn.commit()
+        except Exception:  # noqa: BLE001
+            log.debug("telegram leader lock release failed", exc_info=True)
+        finally:
+            conn.close()
+
+
+async def _poll_when_leader(app: BotApp, settings: Settings, controller: AgentController,
+                            lock: _LeaderLock) -> None:
+    """Start polling only once this instance is the leader. Never raises."""
     try:
-        app = build_application(settings, controller)
-        if app is None:
-            return None
-        await app.initialize()
-        await app.start()
+        announced = False
+        while not await asyncio.to_thread(lock.try_acquire):
+            if not announced:
+                log.info("telegram: another instance holds the bot lock (deploy overlap); waiting for it to exit")
+                announced = True
+            await asyncio.sleep(5)
         if app.updater is not None:
             await app.updater.start_polling(drop_pending_updates=True, error_callback=_polling_error)
         await app.bot.send_message(
@@ -214,6 +259,26 @@ async def start_bot(settings: Settings, controller: AgentController) -> BotApp |
             text=f"PRED Agent online ({controller.mode}). Send /help.",
         )
         log.info("telegram bot started")
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        log.exception("telegram polling failed to start; continuing without it")
+
+
+async def start_bot(settings: Settings, controller: AgentController, engine: Any | None = None) -> BotApp | None:
+    """Start the bot. Never raises: a bad token must not take the web service down.
+
+    Returns immediately; polling begins in the background once this instance holds the leader lock.
+    """
+    try:
+        app = build_application(settings, controller)
+        if app is None:
+            return None
+        await app.initialize()
+        await app.start()
+        lock = _LeaderLock(engine, str(settings.telegram_bot_token))
+        app.bot_data["leader_lock"] = lock
+        app.bot_data["poll_task"] = asyncio.create_task(_poll_when_leader(app, settings, controller, lock))
         return app
     except Exception:
         log.exception("telegram bot failed to start; continuing without it")
@@ -224,12 +289,19 @@ async def stop_bot(app: BotApp | None) -> None:
     if app is None:
         return
     try:
+        task = app.bot_data.get("poll_task")
+        if task is not None:
+            task.cancel()
         if app.updater is not None and app.updater.running:
             await app.updater.stop()
         await app.stop()
         await app.shutdown()
     except Exception:
         log.exception("telegram bot shutdown error")
+    finally:
+        lock = app.bot_data.get("leader_lock")
+        if lock is not None:
+            lock.release()
 
 
 async def send_alert(app: BotApp | None, settings: Settings, text: str) -> None:

@@ -197,3 +197,52 @@ def test_telegram_conflict_is_one_quiet_line(caplog):
         tg._polling_error(Conflict("terminated by other getUpdates request"))
     assert caplog.text.count("another instance is polling") == 1
     assert "Traceback" not in caplog.text
+
+
+def test_telegram_polls_only_after_becoming_leader():
+    from pred_agent.telegram import bot as tg
+
+    class _Lock:
+        def __init__(self) -> None:
+            self.tries = 0
+
+        def try_acquire(self) -> bool:
+            self.tries += 1
+            return self.tries >= 3  # old instance still holds it for the first 2 tries
+
+    class _Updater:
+        started = 0
+
+        async def start_polling(self, **_: Any) -> None:
+            self.started += 1
+
+    class _Bot:
+        sent = 0
+
+        async def send_message(self, **_: Any) -> None:
+            self.sent += 1
+
+    app = SimpleNamespace(updater=_Updater(), bot=_Bot())
+    settings = SimpleNamespace(telegram_allowed_user_id="1")
+    ctl = SimpleNamespace(mode="live")
+    lock = _Lock()
+
+    async def run() -> None:
+        orig = asyncio.sleep
+        tg.asyncio.sleep = lambda _s: orig(0)  # type: ignore[assignment]
+        try:
+            await tg._poll_when_leader(app, settings, ctl, lock)  # type: ignore[arg-type]
+        finally:
+            tg.asyncio.sleep = orig  # type: ignore[assignment]
+
+    asyncio.run(run())
+    assert lock.tries == 3 and app.updater.started == 1 and app.bot.sent == 1
+
+
+def test_leader_lock_fails_open_without_postgres():
+    from sqlalchemy import create_engine
+
+    from pred_agent.telegram.bot import _LeaderLock
+
+    assert _LeaderLock(None, "t").try_acquire() is True
+    assert _LeaderLock(create_engine("sqlite://"), "t").try_acquire() is True

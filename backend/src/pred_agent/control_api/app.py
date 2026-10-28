@@ -368,7 +368,7 @@ def create_app(*, background: bool = False) -> FastAPI:  # noqa: PLR0915
     async def lifespan(app: FastAPI) -> Any:
         from pred_agent.telegram.bot import send_alert, start_bot, stop_bot
 
-        tg_app = await start_bot(settings, controller)
+        tg_app = await start_bot(settings, controller, engine=engine)
         app.state.telegram = tg_app
         bus_task = asyncio.create_task(_bus_to_ws())
 
