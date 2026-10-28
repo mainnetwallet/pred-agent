@@ -153,6 +153,9 @@ def _error_from_raw(raw: str | None) -> str:
     return redact(raw)[:200]
 
 
+_AUTH_RETRY_BACKOFF_S = 300  # after a refused CLOB auth, wait before asking PRED again
+
+
 async def refresh_balance_once(*, controller: AgentController, transport: Any) -> None:
     """Fetch available USDC via the transport; unavailable stays None (never faked)."""
     getter = getattr(transport, "get_balance", None)
@@ -161,13 +164,18 @@ async def refresh_balance_once(*, controller: AgentController, transport: Any) -
     auth = getattr(transport, "auth", None)
     # CLOB: recover existing L2 credentials (derive never creates an account/quota).
     if auth is not None and hasattr(auth, "derive_credentials") and getattr(auth, "credentials", "n/a") is None:
+        if getattr(auth, "_auth_retry_after", 0.0) > time.monotonic():
+            controller.set_balance(None)  # recently refused; do not hammer PRED
+            return
         try:
             await asyncio.to_thread(auth.sync_clock)
             await asyncio.to_thread(getattr(auth, "ensure_credentials", auth.derive_credentials), 0)
         except Exception as exc:  # noqa: BLE001
             from pred_agent.execution.live_runtime import describe_auth_error
 
-            log.warning("balance unavailable: CLOB auth failed: %s", describe_auth_error(exc))
+            log.warning("balance unavailable: CLOB auth failed (retrying in %ss): %s",
+                        _AUTH_RETRY_BACKOFF_S, describe_auth_error(exc))
+            auth._auth_retry_after = time.monotonic() + _AUTH_RETRY_BACKOFF_S
             controller.set_balance(None)
             return
     try:

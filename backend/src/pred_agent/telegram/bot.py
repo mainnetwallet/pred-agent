@@ -9,10 +9,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram.error import Conflict, TelegramError
 from telegram.ext import (
     Application,
     CallbackQueryHandler,
@@ -177,6 +179,26 @@ def build_application(settings: Settings, controller: AgentController) -> BotApp
     return app
 
 
+_conflict_state: dict[str, float | None] = {"last": None}
+
+
+def _polling_error(exc: TelegramError) -> None:
+    """Polling error callback. A Conflict means ANOTHER process polls with the same bot token
+    (old deploy still shutting down, a local copy, a second service). Log one short, rate-limited
+    line instead of a full traceback on every retry; PTB keeps retrying by itself."""
+    if isinstance(exc, Conflict):
+        now = time.monotonic()
+        last = _conflict_state["last"]
+        if last is None or now - last > 300:
+            _conflict_state["last"] = now
+            log.warning(
+                "telegram: another instance is polling with this TELEGRAM_BOT_TOKEN. "
+                "Stop the other copy (old deploy, local run, or a second service); retrying."
+            )
+        return
+    log.warning("telegram polling error: %s: %s", type(exc).__name__, exc)
+
+
 async def start_bot(settings: Settings, controller: AgentController) -> BotApp | None:
     """Start polling. Never raises: a bad token must not take the web service down."""
     try:
@@ -186,7 +208,7 @@ async def start_bot(settings: Settings, controller: AgentController) -> BotApp |
         await app.initialize()
         await app.start()
         if app.updater is not None:
-            await app.updater.start_polling(drop_pending_updates=True)
+            await app.updater.start_polling(drop_pending_updates=True, error_callback=_polling_error)
         await app.bot.send_message(
             chat_id=int(settings.telegram_allowed_user_id or 0),
             text=f"PRED Agent online ({controller.mode}). Send /help.",

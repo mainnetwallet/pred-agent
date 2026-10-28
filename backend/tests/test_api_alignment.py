@@ -162,3 +162,38 @@ def test_aggregator_key_required_hint_explains_unknown_account():
         "401", request=req, response=httpx.Response(401, request=req, json={"error": "aggregator_key_required"}))
     msg = describe_auth_error(exc)
     assert "aggregator_key_required" in msg and "Contact PRED" in msg and "NEW empty account" in msg
+
+
+def test_clob_auth_failure_backs_off_instead_of_hammering_pred():
+    calls = {"n": 0}
+
+    class _Auth:
+        credentials = None
+
+        def sync_clock(self) -> None: ...
+
+        def derive_credentials(self, nonce: int) -> None:
+            calls["n"] += 1
+            raise RuntimeError("401")
+
+    class _T(_Tr):
+        auth = _Auth()
+
+    ctl = _Ctl()
+    t = _T({"success": True, "usdc_balance": "5"})
+    for _ in range(3):
+        asyncio.run(refresh_balance_once(controller=ctl, transport=t))
+    assert calls["n"] == 1 and ctl.balance is None
+
+
+def test_telegram_conflict_is_one_quiet_line(caplog):
+    from telegram.error import Conflict
+
+    from pred_agent.telegram import bot as tg
+
+    tg._conflict_state["last"] = None
+    with caplog.at_level("WARNING"):
+        tg._polling_error(Conflict("terminated by other getUpdates request"))
+        tg._polling_error(Conflict("terminated by other getUpdates request"))
+    assert caplog.text.count("another instance is polling") == 1
+    assert "Traceback" not in caplog.text

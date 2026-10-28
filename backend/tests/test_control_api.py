@@ -32,6 +32,12 @@ def test_health(client):
     assert resp.json()["ok"] is True
 
 
+def test_head_root_is_ok(client):
+    """Render's probe sends HEAD / and used to get 405."""
+    assert client.head("/").status_code == 200
+    assert client.get("/").status_code == 200
+
+
 def test_ready(client):
     resp = client.get("/ready")
     assert resp.status_code == 200

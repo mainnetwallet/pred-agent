@@ -895,7 +895,7 @@ def create_app(*, background: bool = False) -> FastAPI:  # noqa: PLR0915
 
     # ── Website + login ───────────────────────────────────────
 
-    @app.get("/", response_class=HTMLResponse)
+    @app.api_route("/", methods=["GET", "HEAD"], response_class=HTMLResponse)
     async def index() -> Any:
         return HTMLResponse(_WEB_INDEX.read_text(encoding="utf-8"))
 
