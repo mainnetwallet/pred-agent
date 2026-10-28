@@ -65,7 +65,10 @@ export const HomeScreen: React.FC = () => {
 
         <Card style={styles.hero}>
           <Text style={styles.heroLabel}>Balance</Text>
-          <Text style={styles.heroValue}>{formatUsd(balance)}</Text>
+          <Text style={styles.heroValue}>{balance == null ? "—" : formatUsd(balance)}</Text>
+          {balance == null && feedsOk ? (
+            <Text style={styles.heroHint}>Balance unavailable — the server could not fetch it from PRED.</Text>
+          ) : null}
           <View style={styles.divider} />
           <View style={styles.statsRow}>
             <Stat label="Exposure" value={formatUsd(exposure)} />
@@ -147,6 +150,7 @@ const makeStyles = (c: Colors) =>
     hero: { paddingVertical: 20 },
     heroLabel: { color: c.textSecondary, fontSize: 12, fontWeight: "700", letterSpacing: 0.8, textTransform: "uppercase" },
     heroValue: { color: c.text, fontFamily: MONO, fontSize: 38, fontWeight: "800", marginTop: 4, letterSpacing: -1 },
+    heroHint: { color: c.alert, fontSize: 12, marginTop: 6 },
     divider: { height: 1, backgroundColor: c.border, marginVertical: 16 },
     statsRow: { flexDirection: "row", gap: 16 },
     rowCard: {

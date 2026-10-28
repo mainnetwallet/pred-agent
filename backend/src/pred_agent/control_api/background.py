@@ -148,6 +148,8 @@ async def refresh_balance_once(*, controller: AgentController, transport: Any) -
     if body.get("success") is True and body.get("usdc_balance") is not None:
         controller.set_balance(str(body["usdc_balance"]))
     else:
+        log.warning("balance unavailable: success=%r keys=%s error=%r",
+                    body.get("success"), sorted(body.keys()), body.get("error") or body.get("message"))
         controller.set_balance(None)
 
 
@@ -363,7 +365,7 @@ async def run_background_tasks(
                 await refresh_balance_once(controller=controller, transport=transport)
             except Exception:
                 controller.set_balance(None)
-                log.debug("balance refresh failed", exc_info=True)
+                log.warning("balance refresh failed", exc_info=True)
             try:
                 await asyncio.wait_for(stop_ev.wait(), timeout=max(15, controller.settings.scan_interval_seconds))
             except asyncio.TimeoutError:

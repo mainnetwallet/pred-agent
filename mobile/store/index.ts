@@ -78,7 +78,7 @@ export interface UIStore {
   mode: Mode | null;
   paused: boolean;
   feedsOk: boolean;
-  balance: string;
+  balance: string | null; // null = server could not fetch it (never shown as $0.00)
   exposure: string;
   dailyPnl: string;
   pendingProposals: number;
@@ -90,7 +90,7 @@ export const useUIStore = create<UIStore>((set) => ({
   mode: null,
   paused: false,
   feedsOk: false,
-  balance: "0.00",
+  balance: null,
   exposure: "0.00",
   dailyPnl: "0.00",
   pendingProposals: 0,
@@ -99,7 +99,7 @@ export const useUIStore = create<UIStore>((set) => ({
       mode: status.mode,
       paused: status.paused,
       feedsOk: status.feeds_ok,
-      balance: status.balance ?? "0.00",
+      balance: status.balance ?? null,
       exposure: status.exposure,
       dailyPnl: status.daily_pnl,
     }),
