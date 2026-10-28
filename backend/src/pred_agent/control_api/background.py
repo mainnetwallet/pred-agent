@@ -161,8 +161,15 @@ async def refresh_balance_once(*, controller: AgentController, transport: Any) -
     auth = getattr(transport, "auth", None)
     # CLOB: recover existing L2 credentials (derive never creates an account/quota).
     if auth is not None and hasattr(auth, "derive_credentials") and getattr(auth, "credentials", "n/a") is None:
-        await asyncio.to_thread(auth.sync_clock)
-        await asyncio.to_thread(auth.derive_credentials, 0)
+        try:
+            await asyncio.to_thread(auth.sync_clock)
+            await asyncio.to_thread(getattr(auth, "ensure_credentials", auth.derive_credentials), 0)
+        except Exception as exc:  # noqa: BLE001
+            from pred_agent.execution.live_runtime import describe_auth_error
+
+            log.warning("balance unavailable: CLOB auth failed: %s", describe_auth_error(exc))
+            controller.set_balance(None)
+            return
     try:
         body = await asyncio.to_thread(getter)
     except PredTransportError as exc:

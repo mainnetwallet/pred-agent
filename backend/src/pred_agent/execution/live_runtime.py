@@ -201,8 +201,8 @@ def setup_live(
     try:
         auth.sync_clock()
         if auth.credentials is None:
-            # Existing account: derive (never creates a new account or quota).
-            auth.derive_credentials(0)
+            # Existing account: derive, else create L2 creds for it (never a new account/quota).
+            (getattr(auth, "ensure_credentials", None) or auth.derive_credentials)(0)
         status = transport.account_status()
     except Exception as exc:  # noqa: BLE001
         raise LiveSetupError(f"could not authenticate with PRED CLOB: {describe_auth_error(exc)}") from exc

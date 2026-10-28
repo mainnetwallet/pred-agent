@@ -113,3 +113,42 @@ def test_describe_auth_error_shows_status_code_and_hint():
     msg = describe_auth_error(exc)
     assert "HTTP 401" in msg and "invalid_auth" in msg and "primary wallet" in msg
     assert describe_auth_error(RuntimeError("boom")).startswith("RuntimeError")
+
+
+def _clob_auth(handler):
+    from pred_agent.auth.clob_auth import ClobAuth
+
+    key = "0x" + "11" * 32
+    from pred_agent.signer.eip712 import private_to_address
+
+    return ClobAuth(
+        eoa_address=private_to_address(key), private_key=key, aggregator_api_key="partner-key",
+        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+
+
+def test_ensure_credentials_creates_for_existing_account_without_partner_key():
+    """Docs: derive only recovers; an account made on the PRED site has no L2 creds yet."""
+    seen: list[tuple[str, str, bool]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append((request.method, request.url.path, "x-aggregator-api-key" in request.headers))
+        if request.url.path.endswith("derive-api-key"):
+            return httpx.Response(401, json={"error": "invalid_auth"})
+        return httpx.Response(200, json={"apiKey": "k", "secret": "c2VjcmV0", "passphrase": "p"})
+
+    auth = _clob_auth(handler)
+    creds = auth.ensure_credentials(0)
+    assert creds.api_key == "k"
+    assert seen[0][1] == "/clob/auth/derive-api-key"
+    assert seen[1] == ("POST", "/clob/auth/api-key", False)  # never sends the partner key
+
+
+def test_ensure_credentials_does_not_mask_server_errors():
+    import pytest
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(503, json={"error": "down"})
+
+    with pytest.raises(httpx.HTTPStatusError):
+        _clob_auth(handler).ensure_credentials(0)

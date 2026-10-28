@@ -73,7 +73,23 @@ class ClobAuth:
             self._chain_id, self._eoa_address, str(timestamp), nonce, self._private_key
         )
 
-    def create_credentials(self, nonce: int = 0) -> ClobCredentials:
+    def ensure_credentials(self, nonce: int = 0) -> ClobCredentials:
+        """Get L2 credentials for an EXISTING PRED account.
+
+        Docs: derive only *recovers* credentials that were already issued; an account created
+        on the PRED site has none yet. Existing eligible users create them with L1 and a nonce,
+        without a partner key and without consuming account quota. So: derive first, and if
+        PRED rejects it (4xx), create with nonce ``nonce`` WITHOUT the partner key, so this
+        can never create a brand-new account.
+        """
+        try:
+            return self.derive_credentials(nonce)
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code not in (400, 401, 403, 404):
+                raise
+        return self.create_credentials(nonce, send_partner_key=False)
+
+    def create_credentials(self, nonce: int = 0, *, send_partner_key: bool = True) -> ClobCredentials:
         """L1: POST /clob/auth/api-key. New EOA needs aggregator API key."""
         timestamp = self._now()
         signature = self._clob_auth_signature(timestamp, nonce)
@@ -83,7 +99,7 @@ class ClobAuth:
             "PRED_TIMESTAMP": str(timestamp),
             "PRED_NONCE": str(nonce),
         }
-        if self._aggregator_api_key:
+        if self._aggregator_api_key and send_partner_key:
             headers["X-Aggregator-API-Key"] = self._aggregator_api_key
         resp = self._http.post(f"{self._base_url}/clob/auth/api-key", headers=headers)
         if resp.status_code == 400 and "nonce_already_used" in resp.text:
