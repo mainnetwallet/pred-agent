@@ -142,10 +142,8 @@ export const ScreenHeader: React.FC<ScreenHeaderProps> = ({
   const styles = useThemedStyles(makeStyles);
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<any>();
-  const live = mode === "LIVE";
   return (
     <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
-      {live && <View style={[styles.liveBar, { backgroundColor: c.liveBorder }]} />}
       <View style={styles.headerRow}>
         {onBack && (
           <TouchableOpacity onPress={onBack} style={styles.iconBtn} accessibilityLabel="Back" hitSlop={8}>
@@ -343,7 +341,6 @@ const makeStyles = (c: Colors) =>
       paddingHorizontal: 16,
       paddingBottom: 10,
     },
-    liveBar: { position: "absolute", top: 0, left: 0, right: 0, height: 3 },
     headerRow: { flexDirection: "row", alignItems: "center", gap: 8, minHeight: 44 },
     headerTitleWrap: { flex: 1 },
     headerTitle: { color: c.text, fontSize: 26, fontWeight: "800", letterSpacing: -0.5 },

@@ -62,7 +62,7 @@ Two-decimal USD strings; prices in cents as strings.
 ## Navigation
 
 Bottom tabs: Home · Live · Chat · Position · Settings. Every tab has the same header: title,
-PAPER/LIVE/PAUSED pill, and an always-visible Panic button. LIVE adds a red bar across the top.
+PAPER/LIVE/PAUSED pill, and an always-visible Panic button.
 Pending proposals show as a badge on the Home tab. PnL is always signed and carries ▲/▼.
 
 ## Screens (per kit/08_MOBILE_APP.md)
