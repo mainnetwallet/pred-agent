@@ -20,7 +20,6 @@ Ekta Render web service e **website + mobile app API + Telegram bot** tinta-i ch
 | `LLM_MODEL` | model name (jemon `gpt-4o-mini`, `deepseek-chat`) — **tool-calling support dorkar** |
 | `LLM_BASE_URL` | provider er API root, jemon `https://api.openai.com/v1` ba `https://openrouter.ai/api/v1` |
 | `PRIVATE_KEY`, `PRED_API_KEY`, `BASE_RPC_URL` | agent er jonno (optional ekhon) |
-| `PRED_PARTNER_KEY` | optional. PRED-issued partner key; shudhu tokhon use hoy jokhon PRED tomar EOA ke chine na (`aggregator_key_required`). Eta notun account + notun Safe banay |
 
 > **Note:** `DATABASE_URL` is injected automatically by the Blueprint via `fromDatabase`. Do NOT set it manually.
 
@@ -123,7 +122,7 @@ Render → Environment → `ADMIN_PASSWORD` update → redeploy. Purono sob logi
 ## Ekhono baki (manual steps)
 
 1. `LLM_MODEL` set koro — tool-calling support ache emon model choose koro.
-2. `PRED_API_KEY` set koro JWT mode er jonno (optional; chhara read-only + PAPER mode cholbe).
+2. `PRED_API_KEY` set koro JWT mode er jonno (optional; CLOB mode uses L1/L2 credentials and does not use this key).
 3. `PRIVATE_KEY` set koro LIVE er jonno (PAPER mode e dorkar nei).
 4. Alembic migration confirm koro: `alembic upgrade head` startup e automatically cholbe.
 5. PAPER → LIVE checklist complete koro (README.md section 8 dekho).

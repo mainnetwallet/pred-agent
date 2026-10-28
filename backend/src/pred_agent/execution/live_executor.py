@@ -84,6 +84,8 @@ class LiveOrderIntent:
     expiration: int = 0
     reduce_only: bool = False
     max_match_amount: Decimal | None = None
+    expire_on_match_start: bool = False
+    is_low_priority: bool = False
     # Discovery target fee (parent_market_data.fee_rate_bps). When set, the signed rate is
     # recomputed from it and price; fee_rate_bps is overwritten (docs: never sign the raw target).
     fee_target_bps: int | None = None
@@ -188,7 +190,7 @@ class LiveExecutor:
         intent.amount_usd = order_amount_usd(intent.side, intent.price_cents, intent.quantity)
 
         # 2. Build order
-        salt = secrets.randbelow(2**128)  # cryptographically random uint256 (subset for safety)
+        salt = secrets.randbits(256)
         price_wei = price_cents_to_wei(intent.price_cents)
         quantity_wei = shares_to_wei(intent.quantity)
 
@@ -225,6 +227,8 @@ class LiveExecutor:
             "fee_rate_bps": intent.fee_rate_bps,
             "expiration": intent.expiration,
             "reduce_only": intent.reduce_only,
+            "expire_on_match_start": intent.expire_on_match_start,
+            "is_low_priority": intent.is_low_priority,
         }
         if intent.max_match_amount is not None and intent.order_type in ("ioc", "market"):
             body["max_match_amount"] = plain_decimal(intent.max_match_amount)
@@ -351,7 +355,7 @@ class LiveExecutor:
             return "market_id is not an exact 0x + 64 hex child market id"
         if intent.side not in ("long", "short"):
             return f"side must be long or short, got {intent.side!r}"
-        if intent.order_type not in ("limit", "ioc"):
+        if intent.order_type not in ("limit", "market", "ioc"):
             return f"unsupported order type {intent.order_type!r}"
 
         # Price / quantity validity (docs: Orders -> Units, Validation)
@@ -411,7 +415,7 @@ class LiveExecutor:
             )
 
         # Marketable IOC: walk the book (depth >= 3x size and slippage within tolerance).
-        if intent.order_type == "ioc" and not intent.reduce_only:
+        if intent.order_type in ("market", "ioc") and not intent.reduce_only:
             walk = self.analyzer.slippage_walk(
                 book, "buy" if is_long else "sell", intent.quantity
             )

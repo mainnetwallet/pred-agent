@@ -43,12 +43,8 @@ class Settings(BaseSettings):
     create_proxy_factory: str = "0xA077e7aaBF2e3c0155F83789e95f46602D03F7f0"
 
     # Secrets (from .env)
-    # Ordinary-login `X-API-Key` (JWT mode). NOT the CLOB partner key.
+    # Ordinary-login `X-API-Key` (JWT mode). CLOB mode uses credentials issued by PRED.
     pred_api_key: str | None = None
-    # PRED-issued Builder/Aggregator partner key (`X-Aggregator-API-Key`). Opt-in: it is only
-    # ever sent to create a NEW account after derive + create-without-key were both refused,
-    # and it consumes one unit of PRED's lifetime account-creation limit.
-    pred_partner_key: str | None = None
     private_key: str | None = None
     llm_api_key: str | None = None
     llm_model: str | None = None
@@ -130,14 +126,6 @@ class Settings(BaseSettings):
     @field_validator("admin_password", mode="before")
     @classmethod
     def _strip_admin_password(cls, v: Any) -> Any:
-        if isinstance(v, str):
-            return v.strip() or None
-        return v
-
-    @field_validator("pred_partner_key", mode="before")
-    @classmethod
-    def _strip_partner_key(cls, v: Any) -> Any:
-        # Blank / whitespace-only Render env var means "not configured".
         if isinstance(v, str):
             return v.strip() or None
         return v

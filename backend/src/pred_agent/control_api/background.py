@@ -77,7 +77,6 @@ def build_book_feed(settings: Any) -> BookFeed:
                 private_key=settings.private_key,
                 chain_id=settings.chain_id,
                 base_url=settings.host,
-                aggregator_api_key=getattr(settings, "pred_partner_key", None),
             )
             return BookFeed(ClobTransport(auth, base_url=settings.host))
         except Exception:

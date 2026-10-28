@@ -40,7 +40,7 @@ def diagnose(auth: ClobAuth, eoa: str) -> dict[str, Any]:
     report: dict[str, Any] = {"eoa": eoa, "checked_at_utc": time.strftime("%Y-%m-%d %H:%M:%SZ", time.gmtime())}
     report["clock"] = _outcome(auth.sync_clock)
     report["derive"] = _outcome(lambda: auth.derive_credentials(0))
-    report["create_without_partner_key"] = _outcome(lambda: auth.create_credentials(0, send_partner_key=False))
+    report["create_without_partner_key"] = _outcome(lambda: auth.create_credentials(0))
     return report
 
 

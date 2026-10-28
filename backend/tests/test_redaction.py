@@ -34,6 +34,11 @@ def test_redact_pred_headers():
     assert "PRED_SIGNATURE" not in clean
 
 
+def test_redact_legacy_partner_key_value():
+    clean = redact("PRED_PARTNER_KEY=legacy-secret")
+    assert "legacy-secret" not in clean
+
+
 def test_redact_telegram_token():
     clean = redact("TELEGRAM_BOT_TOKEN=123456:ABC")
     assert "TELEGRAM_BOT_TOKEN" not in clean

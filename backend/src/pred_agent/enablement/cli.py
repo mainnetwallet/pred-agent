@@ -89,7 +89,6 @@ def _load_transport() -> tuple[Settings, _ApprovalTransport]:
             eoa_address=private_to_address(settings.private_key) if settings.private_key else "0x",
             private_key=settings.private_key or "",
             chain_id=settings.chain_id,
-            aggregator_api_key=None,
         )
         transport = ClobTransport(clob_auth)
     return settings, transport

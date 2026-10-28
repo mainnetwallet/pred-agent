@@ -101,6 +101,8 @@ def test_amount_is_docs_formula_not_caller_value(monkeypatch):
     assert body["amount"] == "1.976"            # 52 * 3.8 / 100, exact; caller's 999 ignored
     assert body["price"] == "52" and body["quantity"] == "3.8"
     assert body["fee_rate_bps"] == 130          # floor(250 * 0.52): signed, not the raw target
+    assert body["expire_on_match_start"] is False
+    assert body["is_low_priority"] is False
     assert t.calls[0][1] == f"/clob/api/v1/order/{PARENT}/place"
 
 

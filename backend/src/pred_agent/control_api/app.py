@@ -414,8 +414,8 @@ def create_app(*, background: bool = False) -> FastAPI:  # noqa: PLR0915
                             await _alert(
                                 "⚠️ LIVE is ON but PRED has not enabled CLOB access for this wallet "
                                 "(401 aggregator_key_required). No real orders can be placed. Check that "
-                                "PRIVATE_KEY is your PRED account's primary wallet, or set a "
-                                "PRED-issued PRED_PARTNER_KEY (creates a NEW account); retrying "
+                                "PRIVATE_KEY is the primary wallet of an eligible existing PRED account; "
+                                "no new account will be created automatically; retrying "
                                 f"every {int(delay // 60)}+ min."
                             )
                 except Exception as exc:  # noqa: BLE001

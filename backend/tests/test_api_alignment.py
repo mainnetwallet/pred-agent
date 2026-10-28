@@ -122,7 +122,7 @@ def _clob_auth(handler):
     from pred_agent.signer.eip712 import private_to_address
 
     return ClobAuth(
-        eoa_address=private_to_address(key), private_key=key, aggregator_api_key="partner-key",
+        eoa_address=private_to_address(key), private_key=key,
         http_client=httpx.Client(transport=httpx.MockTransport(handler)),
     )
 
@@ -141,7 +141,7 @@ def test_ensure_credentials_creates_for_existing_account_without_partner_key():
     creds = auth.ensure_credentials(0)
     assert creds.api_key == "k"
     assert seen[0][1] == "/clob/auth/derive-api-key"
-    assert seen[1] == ("POST", "/clob/auth/api-key", False)  # never sends the partner key
+    assert seen[1] == ("POST", "/clob/auth/api-key", False)
 
 
 def test_ensure_credentials_does_not_mask_server_errors():
@@ -162,7 +162,7 @@ def test_aggregator_key_required_hint_explains_unknown_account():
         "401", request=req, response=httpx.Response(401, request=req, json={"error": "aggregator_key_required"}))
     msg = describe_auth_error(exc)
     assert "aggregator_key_required" in msg and "primary wallet" in msg
-    assert "PRED_PARTNER_KEY" in msg and "NEW empty account" in msg
+    assert "no new account or Safe" in msg
 
 
 def test_clob_auth_failure_backs_off_instead_of_hammering_pred():

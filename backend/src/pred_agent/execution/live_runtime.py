@@ -138,9 +138,8 @@ _AUTH_HINTS = {
     "invalid_auth": "credential revoked, account not eligible, or this EOA is not the account's primary wallet",
     "aggregator_key_required": (
         "PRED CLOB does not recognise this EOA as an existing eligible account (derive and "
-        "create-without-partner-key were both refused). Check that PRIVATE_KEY is the primary wallet "
-        "of your PRED account; a PRED-issued PRED_PARTNER_KEY would only create a NEW empty account "
-        "with a different Safe"
+        "create-for-existing-account were both refused). Check that PRIVATE_KEY is the primary wallet "
+        "of your already-enabled PRED account; no new account or Safe will be created automatically"
     ),
     "nonce_already_used": "credentials already issued for nonce 0; derive with fresh L1 headers",
 }
@@ -173,7 +172,7 @@ def describe_auth_error(exc: BaseException) -> str:
     elif not hint and isinstance(status, int) and status >= 500:
         hint = "PRED server error; retry later"
     elif not hint and status in (401, 403):
-        hint = "authentication rejected; verify PRIVATE_KEY, partner key, and that the account exists"
+        hint = "authentication rejected; verify PRIVATE_KEY and that the eligible account exists"
     out = f"HTTP {status}"
     if code:
         out += f" {code}"

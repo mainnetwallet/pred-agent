@@ -135,7 +135,7 @@ class AgentController:
         return {
             **live_info,
             "mode": self.mode,
-            "auth_mode": "jwt" if self.settings.pred_api_key else "clob",
+            "auth_mode": "clob",
             "feeds_ok": self.feeds_ok,
             "feed_diag": dict(self._feed_diag) if self._feed_diag is not None else None,
             "balance": self._balance_usd,   # null = not available
