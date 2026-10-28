@@ -125,7 +125,7 @@ def test_quantity_for_amount_rounds_down_and_never_exceeds_budget():
     ({"fee_target_bps": None}, "ok", None, "fee_rate_bps missing"),
     ({"quantity": Decimal("1.2345")}, "ok", None, "at most 3 decimals"),
     ({"quantity": Decimal("1"), "price_cents": Decimal("50")}, "ok", None, "below $0.9"),
-    ({"price_cents": Decimal("100")}, "ok", None, "between 0 and 100"),
+    ({"price_cents": Decimal("100")}, "ok", None, "out of range"),
     ({"market_id": "mx1"}, "ok", None, "exact 0x"),
     ({"contract_address": ""}, "ok", None, "contract_address"),
     ({}, None, None, "no fresh order book"),
