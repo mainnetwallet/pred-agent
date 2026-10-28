@@ -285,6 +285,7 @@ class AgentController:
         """Record why a LIVE approval was refused. Always returns None."""
         self.last_error = message
         log.warning("live approve refused: %s", message)
+        return None
 
     @staticmethod
     def _is_exit(prop: Proposal) -> bool:
