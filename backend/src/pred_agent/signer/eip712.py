@@ -3,7 +3,7 @@
 Grounded in kit/02_PRED_API_SPEC.md sections 3, 4, 5, 8 and the live docs
 (Authentication, Builder / Aggregator Onboarding, Trading Enablement, Orders).
 
-All signatures: ``0x<r><v>`` (132 hex chars), canonical low-s,
+All signatures: ``0x<r><s><v>`` (132 hex chars), canonical low-s,
 ``v`` in {27, 28}.
 
 Only this module reads ``PRIVATE_KEY``.
@@ -148,7 +148,7 @@ def _type_hash(primary_type: str, types: dict[str, Any]) -> bytes:
     return keccak(text=_encode_type(primary_type, types))
 
 
-def _encode_value(mtype: str, value: Any, types: dict[str, Any]) -> bytes:
+def _encode_value(mtype: str, value: Any, types: dict[str, Any]) -> bytes:  # noqa: PLR0911
     """EIP-712 encoding of a single value (returns 32 bytes)."""
     if mtype == "string":
         return keccak(text=value)
@@ -161,10 +161,22 @@ def _encode_value(mtype: str, value: Any, types: dict[str, Any]) -> bytes:
         raise ValueError(f"array type not supported in encoder: {mtype}")
     if mtype in types:
         return _hash_struct(mtype, types, value)
-    # uint*, int*, address, bytes32
+    if mtype == "address":
+        # EIP-712: static types are 32-byte words; addresses are left-padded.
+        raw = to_bytes(hexstr=value)
+        if len(raw) != 20:
+            raise ValueError(f"address must be 20 bytes, got {len(raw)}")
+        return raw.rjust(32, b"\x00")
+    if mtype.startswith("bytes") and mtype != "bytes":
+        raw = to_bytes(hexstr=value) if isinstance(value, str) else bytes(value)
+        size = int(mtype[5:])
+        if len(raw) != size:
+            raise ValueError(f"{mtype} must be {size} bytes, got {len(raw)}")
+        return raw.ljust(32, b"\x00")
+    # uint*, int*
     if isinstance(value, int):
         return int.to_bytes(value, 32, "big")
-    return to_bytes(hexstr=value)
+    return int(value).to_bytes(32, "big")
 
 
 def _hash_struct(primary_type: str, types: dict[str, Any], message: dict[str, Any]) -> bytes:
@@ -192,12 +204,12 @@ def _eip712_digest(domain: dict[str, Any], types: dict[str, Any], primary_type: 
 
 
 def _eip712_digest_with_prefix(domain: dict[str, Any], types: dict[str, Any], primary_type: str, message: dict[str, Any]) -> bytes:
-    """Standard Ethereum signed-message hash = keccak(\\x19\\x01 || raw_digest)."""
-    return keccak(b"\x19\x01" + _eip712_digest(domain, types, primary_type, message))
+    """Standard EIP-712 digest = keccak(0x19 0x01 || domainSeparator || hashStruct(message))."""
+    return keccak(b"\x19\x01" + _hash_domain(domain, types) + _hash_struct(primary_type, types, message))
 
 
 def _canonical_sig(r: int | bytes, s: int | bytes, v: int) -> str:
-    """Return 0x<r><v> with canonical low-s and v in {27,28}."""
+    """Return 0x<r><s><v> with canonical low-s and v in {27,28}."""
     r_bytes = r.to_bytes(32, "big") if isinstance(r, int) else r
     s_in = s.to_bytes(32, "big") if isinstance(s, int) else s
     s_int = int.from_bytes(s_in, "big")
@@ -227,7 +239,7 @@ def _sign_typed(domain: dict[str, Any], types: dict[str, Any], primary_type: str
 # ---------------------------------------------------------------------------
 
 def sign_create_proxy(chain_id: int, verifying_contract: str, private_key: str) -> str:
-    """CreateProxy login signature (raw digest, no EIP-191 prefix).
+    """CreateProxy login signature (standard EIP-712 typed data, no personal_sign prefix).
 
     Domain: EIP712Domain(string name,uint256 chainId,address verifyingContract)
     name: "Pred Contract Proxy Factory"
@@ -243,8 +255,7 @@ def sign_create_proxy(chain_id: int, verifying_contract: str, private_key: str) 
         "payment": 0,
         "paymentReceiver": "0x0000000000000000000000000000000000000000",
     }
-    digest = _eip712_digest(domain, CREATE_PROXY_TYPES, CREATE_PROXY_TYPE, message)
-    return _sign_digest(digest, private_key)
+    return _sign_typed(domain, CREATE_PROXY_TYPES, CREATE_PROXY_TYPE, message, private_key)
 
 
 def sign_clob_auth(chain_id: int, address: str, timestamp: str, nonce: int,
@@ -304,19 +315,24 @@ def sign_safe_tx_digest(digest: bytes, private_key: str) -> str:
 
 
 def safe_tx_digest(chain_id: int, safe_address: str, safe_tx_data: dict[str, Any]) -> bytes:
-    """Compute the raw SafeTx EIP-712 digest (no prefix) for verification/signing.
+    """Compute the SafeTx EIP-712 digest (keccak(0x1901 || domain || struct)).
+
+    This equals the ``transactionHash`` PRED returns from safe-approval/prepare, so callers
+    must compare the two before signing. "No EIP-191 prefix" in the docs means no
+    personal_sign ("Ethereum Signed Message") wrapper; the 0x1901 EIP-712 prefix stays.
+
 
     Domain: EIP712Domain(uint256 chainId,address verifyingContract=safeAddress)
     Type: SafeTx(address to,uint256 value,bytes data,uint8 operation,uint256 safeTxGas,
                  uint256 baseGas,uint256 gasPrice,address gasToken,address refundReceiver,uint256 nonce)
     """
     domain = {"chainId": chain_id, "verifyingContract": safe_address}
-    return _eip712_digest(domain, SAFE_TX_TYPES, SAFE_TX_TYPE, safe_tx_data)
+    return _eip712_digest_with_prefix(domain, SAFE_TX_TYPES, SAFE_TX_TYPE, safe_tx_data)
 
 
 def sign_safe_tx(chain_id: int, safe_address: str, safe_tx_data: dict[str, Any],
                  private_key: str) -> str:
-    """Sign a SafeTx (raw digest, no EIP-191 prefix), canonical low-s."""
+    """Sign a SafeTx EIP-712 digest directly (no personal_sign wrapper), canonical low-s."""
     digest = safe_tx_digest(chain_id, safe_address, safe_tx_data)
     return _sign_digest(digest, private_key)
 

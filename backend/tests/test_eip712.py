@@ -135,3 +135,69 @@ def test_safe_tx_digest():
 
 def test_curve_half():
     assert CURVE_HALF == 0x7FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF5D576E7357A4501DDFE92F46681B20A0
+
+
+# ---------------------------------------------------------------------------
+# Reference check: digests/signatures must equal the standard EIP-712 encoding
+# (eth_account is an independent implementation) and recover to the signer.
+# ---------------------------------------------------------------------------
+
+from eth_account import Account  # noqa: E402
+from eth_account.messages import encode_typed_data  # noqa: E402
+
+from pred_agent.signer import eip712 as _e  # noqa: E402
+
+_ADDR = "0x" + "ab" * 20
+_ZERO = "0x" + "00" * 20
+
+
+def _recovers(domain, types, primary, message, sig) -> bool:
+    signable = encode_typed_data(
+        full_message={"types": types, "primaryType": primary, "domain": domain, "message": message}
+    )
+    return bool(Account.recover_message(signable, signature=sig) == private_to_address(FIXED_PRIVATE_KEY))
+
+
+def test_clob_auth_matches_reference_eip712():
+    me = private_to_address(FIXED_PRIVATE_KEY)
+    sig = sign_clob_auth(CHAIN_ID, me, "1700000000", 0, FIXED_PRIVATE_KEY)
+    domain = {"name": "ClobAuthDomain", "version": "1", "chainId": CHAIN_ID}
+    msg = {"address": me, "timestamp": "1700000000", "nonce": 0,
+           "message": "This message attests that I control the given wallet"}
+    assert _recovers(domain, _e.CLOB_AUTH_TYPES, "ClobAuth", msg, sig)
+
+
+def test_create_proxy_matches_reference_eip712():
+    sig = sign_create_proxy(CHAIN_ID, CREATE_PROXY_FACTORY, FIXED_PRIVATE_KEY)
+    domain = {"name": "Pred Contract Proxy Factory", "chainId": CHAIN_ID,
+              "verifyingContract": CREATE_PROXY_FACTORY}
+    msg = {"paymentToken": _ZERO, "payment": 0, "paymentReceiver": _ZERO}
+    assert _recovers(domain, _e.CREATE_PROXY_TYPES, "CreateProxy", msg, sig)
+
+
+def test_order_matches_reference_eip712():
+    me = private_to_address(FIXED_PRIVATE_KEY)
+    qid = "0x" + "cd" * 32
+    sig = sign_order(CHAIN_ID, _ADDR, 12345, _ADDR, me, 550_000, 100_000_000, 0, 0, qid, 170, 0, 2,
+                     FIXED_PRIVATE_KEY)
+    domain = {"name": "Pred CTF Exchange", "version": "1", "chainId": CHAIN_ID, "verifyingContract": _ADDR}
+    msg = {"salt": 12345, "maker": _ADDR, "signer": me, "taker": _ZERO, "price": 550_000,
+           "quantity": 100_000_000, "expiration": 0, "nonce": 0, "questionId": qid,
+           "feeRateBps": 170, "intent": 0, "signatureType": 2}
+    assert _recovers(domain, _e.ORDER_TYPES, "Order", msg, sig)
+
+
+def test_safe_tx_digest_matches_reference_and_signs():
+    from eth_utils.crypto import keccak
+
+    safe = "0x" + "11" * 20
+    tx = {"to": "0x" + "22" * 20, "value": 0, "data": "0x1234", "operation": 0, "safeTxGas": 0,
+          "baseGas": 0, "gasPrice": 0, "gasToken": _ZERO, "refundReceiver": _ZERO, "nonce": 3}
+    signable = encode_typed_data(full_message={
+        "types": _e.SAFE_TX_TYPES, "primaryType": "SafeTx",
+        "domain": {"chainId": CHAIN_ID, "verifyingContract": safe}, "message": tx})
+    expected = keccak(b"\x19" + signable.version + signable.header + signable.body)
+    assert safe_tx_digest(CHAIN_ID, safe, tx) == expected
+    sig = sign_safe_tx(CHAIN_ID, safe, tx, FIXED_PRIVATE_KEY)
+    _assert_valid_signature(sig)
+    assert _recovers({"chainId": CHAIN_ID, "verifyingContract": safe}, _e.SAFE_TX_TYPES, "SafeTx", tx, sig)

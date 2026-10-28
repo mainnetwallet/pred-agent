@@ -58,7 +58,6 @@ class JwtAuth:
 
         self._lock = threading.RLock()
         self._tokens: JwtTokens | None = None
-        self._refresh_in_flight: threading.Event | None = None
 
     # ------------------------------------------------------------------ #
     # Public API
@@ -103,21 +102,18 @@ class JwtAuth:
         return tokens
 
     def refresh(self) -> JwtTokens:
-        """Refresh the access token. Single-flight; new refresh from Set-Cookie."""
-        with self._lock:
-            if self._refresh_in_flight is None:
-                self._refresh_in_flight = threading.Event()
-                self._refresh_in_flight.set()
-            else:
-                # Wait for the in-flight refresh to complete
-                self._refresh_in_flight.wait()
-                if self._tokens is not None:
-                    return self._tokens
+        """Refresh the access token. Single-flight; new refresh from Set-Cookie.
 
-            try:
-                return self._refresh_locked()
-            finally:
-                self._refresh_in_flight.clear()
+        Refresh tokens rotate and the old one dies after first use, so concurrent callers must
+        not each spend it. The lock serialises them; a caller that waited re-checks whether
+        another thread already refreshed and reuses those tokens instead of rotating again.
+        """
+        with self._lock:
+            if self._tokens is not None and self._tokens.expires_at is not None:
+                remaining = (self._tokens.expires_at - datetime.now(timezone.utc)).total_seconds()
+                if remaining >= self._refresh_threshold:
+                    return self._tokens
+            return self._refresh_locked()
 
     def _refresh_locked(self) -> JwtTokens:
         if self._tokens is None:

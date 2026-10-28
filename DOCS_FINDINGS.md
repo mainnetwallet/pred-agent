@@ -194,3 +194,24 @@ Answered now (can be removed/marked): `user_id` in place body; Cashout vs `reduc
 ---
 
 **Phase 0 status:** docs recon complete; `DOCS_FINDINGS.md` written; no application code written; no keys requested. Stopping here — waiting for `GO` before Phase 1.
+
+---
+
+## 4. Code-vs-docs audit (Oct 28, 2026) — bugs found and fixed
+
+Checked every API call site against the official docs (`pred-docs-text.zip`). Endpoint paths, `PRED_*` L1/L2
+headers, HMAC canonical path, place/cancel bodies and response handling all match. Differences fixed:
+
+| # | Code did | Docs / standard require | Fix |
+|---|---|---|---|
+| 1 | EIP-712 `address` fields encoded as 20 bytes | Static types are 32-byte words; addresses left-padded | `signer/eip712.py::_encode_value` pads addresses, right-pads `bytesN` |
+| 2 | `_eip712_digest_with_prefix` hashed `0x1901 ‖ keccak(domain‖struct)` | `keccak(0x1901 ‖ domainSeparator ‖ structHash)` | Digest rebuilt per EIP-712 (ClobAuth, Order, CreateProxy, SafeTx) |
+| 3 | CreateProxy / SafeTx signed a digest **without** `0x1901` | "No EIP-191 prefix" = no `personal_sign` wrapper; SafeTx digest equals PRED's `transactionHash` | Both use the standard EIP-712 digest |
+| 4 | `reconcile_startup` read only the first open-orders page (default 50) | Paginate with `limit`≤100/`offset` until `pagination.has_more` is false | `_fetch_all_open_orders` |
+| 5 | Empty open-orders reply (`orders` omitted) raised `ReconcileError` | Empty `orders` are omitted from the portfolio envelope | `success=true` + no `orders` ⇒ `[]`; `success=false` fails closed |
+| 6 | `sync_fills` treated every trade-history row as a fill | Rows may be `Redeemed` / `Lost` settlements | Those rows are skipped |
+| 7 | `get_book` chat tool cache-only; no spread/mid; fetch errors silent | Orderbook is a public REST endpoint | REST fallback, analyzer, logging |
+| 8 | JWT refresh "single-flight" event was set at creation, so waiters never waited | Refresh tokens rotate; old one dies after use | Lock + re-check before rotating |
+
+Tests compare all four signatures to `eth_account`'s independent EIP-712 implementation and recover the signer.
+Not covered: `enablement/cli.py` Safe-approval steps are still TODO placeholders (verify/decode/sign/execute).

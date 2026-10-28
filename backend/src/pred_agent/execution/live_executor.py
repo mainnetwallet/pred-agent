@@ -56,6 +56,9 @@ _BYTES32_RE = re.compile(r"^0x[0-9a-fA-F]{64}$")
 
 # HTTP statuses that mean PRED definitely did NOT accept the order (safe to mark FAILED).
 _DEFINITE_REJECT_STATUSES = frozenset({400, 401, 403, 404, 422})
+_MAX_OPEN_ORDER_PAGES = 50
+# trade-history also lists settlement rows (Redeemed / Lost); only trades are order fills.
+_NON_FILL_ACTIVITIES = frozenset({"redeemed", "lost"})
 
 _ACTIVE_STATES = frozenset({
     OrderState.SUBMITTED, OrderState.DELAYED, OrderState.OPEN, OrderState.PARTIAL,
@@ -532,6 +535,26 @@ class LiveExecutor:
     # Startup reconcile
     # ------------------------------------------------------------------ #
 
+    def _fetch_all_open_orders(self) -> list[dict[str, Any]]:
+        """Read every page of portfolio/open-orders (default page is only 50 rows).
+
+        Docs: paginate with ``offset``/``limit`` (max 100) until ``pagination.has_more`` is false.
+        A reply without ``pagination`` is treated as a single page.
+        """
+        path = f"{self._order_prefix()}/api/v1/portfolio/open-orders"
+        limit = 100
+        offset = 0
+        out: list[dict[str, Any]] = []
+        for _ in range(_MAX_OPEN_ORDER_PAGES):
+            body = self.transport.get(path, params={"limit": limit, "offset": offset})
+            page = _extract_open_orders(body)
+            out.extend(page)
+            pagination = body.get("pagination") if isinstance(body, dict) else None
+            if not isinstance(pagination, dict) or not pagination.get("has_more") or not page:
+                return out
+            offset += int(pagination.get("limit") or limit)
+        raise ReconcileError("open-orders pagination did not terminate; refusing to guess")
+
     def reconcile_startup(self) -> dict[str, Any]:
         """Reconcile local orders with the exchange's open orders. Fail closed.
 
@@ -541,8 +564,7 @@ class LiveExecutor:
         open list stay UNKNOWN (filled vs cancelled cannot be told from this endpoint) and
         their markets stay blocked until a human resolves them.
         """
-        body = self.transport.get(f"{self._order_prefix()}/api/v1/portfolio/open-orders")
-        remote = _extract_open_orders(body)
+        remote = self._fetch_all_open_orders()
         remote_by_id = {str(o["order_id"]): o for o in remote if o.get("order_id")}
 
         refreshed = 0
@@ -642,6 +664,8 @@ class LiveExecutor:
         by_pred = {r.pred_order_id: r for r in self.sm.list_orders() if r.pred_order_id}
         applied = 0
         for row in body["trade_history"]:
+            if str(row.get("activity") or "").strip().lower() in _NON_FILL_ACTIVITIES:
+                continue
             rec = by_pred.get(str(row.get("order_id") or ""))
             if rec is None or not row.get("trade_history_id"):
                 continue
@@ -730,6 +754,10 @@ def _extract_open_orders(body: Any) -> list[dict[str, Any]]:
     if isinstance(body, list):
         candidates.append(body)
     elif isinstance(body, dict):
+        if body.get("success") is False:
+            raise ReconcileError("open-orders reply reported success=false; refusing to guess")
+        if body.get("success") is True and "orders" not in body and "data" not in body:
+            return []  # docs: empty orders are omitted from the portfolio envelope
         candidates.append(body.get("orders"))
         data = body.get("data")
         if isinstance(data, list):
