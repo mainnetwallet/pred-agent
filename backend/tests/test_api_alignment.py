@@ -152,3 +152,13 @@ def test_ensure_credentials_does_not_mask_server_errors():
 
     with pytest.raises(httpx.HTTPStatusError):
         _clob_auth(handler).ensure_credentials(0)
+
+
+def test_aggregator_key_required_hint_explains_primary_wallet():
+    from pred_agent.execution.live_runtime import describe_auth_error
+
+    req = httpx.Request("POST", "https://www.pred.app/clob/auth/api-key")
+    exc = httpx.HTTPStatusError(
+        "401", request=req, response=httpx.Response(401, request=req, json={"error": "aggregator_key_required"}))
+    msg = describe_auth_error(exc)
+    assert "aggregator_key_required" in msg and "PRIMARY wallet" in msg

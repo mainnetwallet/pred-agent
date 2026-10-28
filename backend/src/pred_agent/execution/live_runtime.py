@@ -136,7 +136,11 @@ _AUTH_HINTS = {
     "invalid_l1": "check ClobAuth signature: chain ID, timestamp (within 30s), nonce, and that PRIVATE_KEY is the account EOA",
     "invalid_l2": "check L2 key/passphrase/secret, uppercase method, canonical path and body",
     "invalid_auth": "credential revoked, account not eligible, or this EOA is not the account's primary wallet",
-    "aggregator_key_required": "new account: set the PRED-issued partner key (X-Aggregator-API-Key)",
+    "aggregator_key_required": (
+        "PRED does not know this EOA as an existing account's PRIMARY wallet, so it treats it as a "
+        "new account. Use the key of the account's primary wallet; a partner key would only create a "
+        "NEW empty account with a different Safe"
+    ),
     "aggregator_account_limit_reached": "partner account-creation limit reached; ask PRED",
     "nonce_already_used": "credentials already issued for nonce 0; derive with fresh L1 headers",
 }
@@ -205,7 +209,9 @@ def setup_live(
             (getattr(auth, "ensure_credentials", None) or auth.derive_credentials)(0)
         status = transport.account_status()
     except Exception as exc:  # noqa: BLE001
-        raise LiveSetupError(f"could not authenticate with PRED CLOB: {describe_auth_error(exc)}") from exc
+        raise LiveSetupError(
+            f"could not authenticate with PRED CLOB: {describe_auth_error(exc)} [EOA {eoa}]"
+        ) from exc
 
     proxy = str(status.get("proxy_wallet_address") or "").strip()
     if not proxy:
