@@ -853,7 +853,7 @@ def create_app(*, background: bool = False) -> FastAPI:  # noqa: PLR0915
 
     # ── Health ────────────────────────────────────────────────
 
-    @app.get("/health")
+    @app.api_route("/health", methods=["GET", "HEAD"])
     async def health() -> Any:
         return {"ok": True, "status": "healthy"}
 

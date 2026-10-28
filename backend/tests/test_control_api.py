@@ -26,6 +26,11 @@ def _get_auth(client: TestClient):
 # Health / ready
 # ---------------------------------------------------------------------------
 
+def test_health_head(client):
+    # UptimeRobot (free plan) probes with HEAD; it must not 405.
+    assert client.head("/health").status_code == 200
+
+
 def test_health(client):
     resp = client.get("/health")
     assert resp.status_code == 200
