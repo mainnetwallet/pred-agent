@@ -90,12 +90,14 @@ class BookFeed:
             if raw:
                 return self._normalize_and_cache(market_id, raw, ws_dollars=False)
         except Exception:
-            logger.debug("unauthenticated fetch failed; falling back to authenticated transport", exc_info=True)
+            logger.warning("unauthenticated book fetch failed for %s; trying authenticated transport",
+                           market_id, exc_info=True)
         # Fall back to authenticated transport
         try:
             raw = self.transport.get(path)
             return self._normalize_and_cache(market_id, raw, ws_dollars=False)
-        except Exception:
+        except Exception as exc:
+            logger.warning("book fetch failed for market=%s parent=%s: %s", market_id, parent_market_id, exc)
             return None
 
     async def _http_get_no_auth(self, path: str) -> dict[str, Any] | None:
@@ -104,6 +106,7 @@ class BookFeed:
         async with httpx.AsyncClient(timeout=10.0) as client:
             resp = await client.get(f"{settings.host}{path}")
             if resp.status_code >= 400:
+                logger.warning("orderbook GET %s -> HTTP %s: %.200s", path, resp.status_code, resp.text)
                 return None
             data: dict[str, Any] = resp.json()
             return data
