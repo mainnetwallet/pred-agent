@@ -238,9 +238,11 @@ class AgentController:
 
     def disarm_live(self, reason: str) -> None:
         """Setup failed or was lost: LIVE approvals fail closed with this reason."""
+        changed = reason != self.live_not_ready_reason or self.live_execution_ready
         self.live_execution_ready = False
         self.live_not_ready_reason = reason
-        log.error("live execution NOT ready: %s", reason)
+        # Setup is retried on a timer: log at ERROR when the reason changes, DEBUG when it repeats.
+        log.log(logging.ERROR if changed else logging.DEBUG, "live execution NOT ready: %s", reason)
 
     # ── proposals ─────────────────────────────────────────────
 

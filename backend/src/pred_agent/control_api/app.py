@@ -384,6 +384,8 @@ def create_app(*, background: bool = False) -> FastAPI:  # noqa: PLR0915
             from pred_agent.execution.live_runtime import LiveSetupError, setup_live
 
             transport = getattr(app.state.book_feed, "transport", None)
+            delay = 60.0
+            alerted_setup: str | None = None
             while True:
                 try:
                     runtime = await asyncio.to_thread(
@@ -401,10 +403,23 @@ def create_app(*, background: bool = False) -> FastAPI:  # noqa: PLR0915
                     )
                     break
                 except LiveSetupError as exc:
-                    controller.disarm_live(str(exc))
+                    reason = str(exc)
+                    controller.disarm_live(reason)
+                    if "aggregator_key_required" in reason:
+                        # PRED has not enabled CLOB access for this EOA: retrying every minute
+                        # cannot help and only hammers PRED. Back off, and tell the operator once.
+                        delay = min(delay * 2, 900.0)
+                        if alerted_setup != "aggregator_key_required":
+                            alerted_setup = "aggregator_key_required"
+                            await _alert(
+                                "⚠️ LIVE is ON but PRED has not enabled CLOB access for this wallet "
+                                "(401 aggregator_key_required). No real orders can be placed. Ask PRED "
+                                "to enable CLOB access for the EOA or issue a PRED_API_KEY; retrying "
+                                f"every {int(delay // 60)}+ min."
+                            )
                 except Exception as exc:  # noqa: BLE001
                     controller.disarm_live(f"unexpected setup failure: {type(exc).__name__}")
-                await asyncio.sleep(60)
+                await asyncio.sleep(delay)
             # Armed: keep mirroring fills / open orders / positions from PRED.
             last_unresolved = 0
             alerted_error: str | None = None
