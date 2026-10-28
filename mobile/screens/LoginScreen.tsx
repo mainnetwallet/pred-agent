@@ -111,21 +111,21 @@ export const LoginScreen: React.FC = () => {
 };
 
 const makeStyles = (c: Colors) => StyleSheet.create({
-  container: { flex: 1, justifyContent: "center", padding: 24 },
-  title: {
-    color: c.text, fontSize: 26, fontWeight: "700", marginBottom: 4 },
-  subtitle: { fontSize: 14, color: c.textSecondary, marginBottom: 20 },
+  container: { flex: 1, justifyContent: "center", padding: 24, backgroundColor: c.background },
+  title: { color: c.text, fontSize: 34, fontWeight: "800", letterSpacing: -1, marginBottom: 4 },
+  subtitle: { fontSize: 15, color: c.textSecondary, marginBottom: 28 },
   input: {
     borderWidth: 1,
     borderColor: c.border,
-    borderRadius: 8,
-    padding: 12,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    minHeight: 52,
     fontSize: 16,
     marginBottom: 12,
     color: c.text,
     backgroundColor: c.inputBackground,
   },
-  button: { backgroundColor: c.primary, borderRadius: 8, padding: 14, alignItems: "center" },
-  buttonText: { color: c.onAccent, fontWeight: "600", fontSize: 16 },
-  hint: { marginTop: 20, fontSize: 12, color: c.textSecondary, lineHeight: 18 },
+  button: { backgroundColor: c.primary, borderRadius: 12, minHeight: 52, alignItems: "center", justifyContent: "center", marginTop: 4 },
+  buttonText: { color: c.onAccent, fontWeight: "800", fontSize: 16 },
+  hint: { marginTop: 20, fontSize: 12, color: c.textMuted, lineHeight: 18 },
 });

@@ -100,7 +100,7 @@ const makeStyles = (c: Colors) =>
       backgroundColor: c.track,
       borderRadius: 4,
       overflow: "hidden",
-      width: 200,
+      width: "100%",
       position: "relative",
     },
     barBand: {

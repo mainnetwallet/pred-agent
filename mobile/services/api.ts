@@ -143,9 +143,10 @@ class ApiClient {
     return this.request<Position[]>("/v1/positions");
   }
 
-  async closePosition(id: string): Promise<ApiEnvelope<Proposal>> {
+  async closePosition(id: string, xConfirm?: string): Promise<ApiEnvelope<Proposal>> {
     return this.request<Proposal>(`/v1/positions/${id}/close`, {
       method: "POST",
+      headers: xConfirm ? { "X-Confirm": xConfirm } : {},
     });
   }
 

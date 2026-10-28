@@ -1,232 +1,169 @@
-// Home screen — status strip (PAPER/LIVE + paused), balance, exposure, daily PnL,
-// pending proposals count, live fixtures list (kit/08_MOBILE_APP.md)
+// Home — dashboard: balance hero, exposure / daily PnL, pending proposals, live fixtures.
 
-import React, { useEffect, useState } from "react";
-import {
-  View,
-  Text,
-  FlatList,
-  StyleSheet,
-  ActivityIndicator,
-  TouchableOpacity,
-  Alert,
-} from "react-native";
-import { useNavigation } from "@react-navigation/native";
-import { useUIStore, useProposalsStore, useAuthStore } from "../store/index";
-import { Colors, useTheme, useThemedStyles } from "../utils/theme";
+import React, { useCallback, useState } from "react";
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity, RefreshControl } from "react-native";
+import { useFocusEffect, useNavigation } from "@react-navigation/native";
+import { useUIStore, useProposalsStore } from "../store/index";
+import { Colors, MONO, radius, useTheme, useThemedStyles } from "../utils/theme";
 import { api } from "../services/api";
-import { StatusBanner, MoneyDisplay, OfflineBadge } from "../components/common";
+import { formatUsd } from "../utils/format";
 import { FixtureSummary } from "../types/api";
+import { Card, EmptyState, Icon, ScreenHeader, SectionTitle, SideChip, Stat, StateChip, signedUsd } from "../components/ui";
+
+const REFRESH_MS = 15000;
 
 export const HomeScreen: React.FC = () => {
   const c = useTheme();
   const styles = useThemedStyles(makeStyles);
+  const navigation = useNavigation<any>();
   const { setStatus, mode, paused, feedsOk, balance, exposure, dailyPnl } = useUIStore();
   const { proposals, setProposals } = useProposalsStore();
-  const [refreshing, setRefreshing] = useState(false);
   const [fixtures, setFixtures] = useState<FixtureSummary[]>([]);
-  const navigation = useNavigation<any>();
-  const { logout } = useAuthStore();
+  const [refreshing, setRefreshing] = useState(false);
 
-  const confirmLogout = () => {
-    Alert.alert("Log out", "Sign out of this device?", [
-      { text: "Cancel", style: "cancel" },
-      { text: "Log out", style: "destructive", onPress: () => void logout() },
-    ]);
-  };
-
-  useEffect(() => {
-    loadData();
-  }, []);
-
-  const loadData = async () => {
-    setRefreshing(true);
+  const loadData = useCallback(async () => {
     try {
-      const statusResp = await api.getStatus();
-      if (statusResp.ok && statusResp.data) {
-        setStatus(statusResp.data);
-      }
-      const proposalsResp = await api.getProposals("pending");
-      if (proposalsResp.ok && proposalsResp.data) {
-        setProposals(proposalsResp.data);
-      }
-      const fixturesResp = await api.getFixtures("live");
-      if (fixturesResp.ok && fixturesResp.data) {
-        setFixtures(fixturesResp.data);
-      }
+      const [s, p, f] = await Promise.all([api.getStatus(), api.getProposals("pending"), api.getFixtures("live")]);
+      if (s.ok && s.data) setStatus(s.data);
+      if (p.ok && p.data) setProposals(p.data);
+      if (f.ok && f.data) setFixtures(f.data);
     } catch {
-      // error handled by stale badge
-    } finally {
-      setRefreshing(false);
+      // offline: the stale badge covers it
     }
+  }, [setStatus, setProposals]);
+
+  // Refresh when the tab gains focus and keep polling while it is visible.
+  useFocusEffect(
+    useCallback(() => {
+      loadData();
+      const t = setInterval(loadData, REFRESH_MS);
+      return () => clearInterval(t);
+    }, [loadData])
+  );
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await loadData();
+    setRefreshing(false);
   };
 
-  const pendingCount = proposals.filter((p) => p.status === "PROPOSED").length;
+  const pending = proposals.filter((p) => p.status === "PROPOSED");
+  const pnl = signedUsd(dailyPnl);
 
   return (
     <View style={styles.container}>
-      <StatusBanner mode={mode} paused={paused} />
-      <View style={styles.content}>
-        <View style={styles.navRow}>
-          <TouchableOpacity style={styles.navButton} onPress={() => navigation.navigate("Chat")}>
-            <Text style={styles.navText}>Chat</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.navButton} onPress={() => navigation.navigate("Rules")}>
-            <Text style={styles.navText}>Rules</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.navButton} onPress={() => navigation.navigate("Proposals")}>
-            <Text style={styles.navText}>Proposals</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.navButton} onPress={() => navigation.navigate("LimitsSettings")}>
-            <Text style={styles.navText}>Limits</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.navButton} onPress={() => navigation.navigate("Panic")}>
-            <Text style={styles.navText}>Panic</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.navButton} onPress={confirmLogout}>
-            <Text style={styles.navText}>Log out</Text>
-          </TouchableOpacity>
-        </View>
-        <View style={styles.statsRow}>
-          <MoneyDisplay amount={balance} label="Balance" />
-          <MoneyDisplay amount={exposure} label="Exposure" />
-          <MoneyDisplay amount={dailyPnl} label="Daily PnL" />
-        </View>
-        <OfflineBadge stale={!feedsOk} lastUpdate={null} />
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Pending Proposals ({pendingCount})</Text>
-          {proposals.length === 0 ? (
-            <Text style={styles.empty}>No pending proposals</Text>
-          ) : (
-            <FlatList
-              data={proposals.filter((p) => p.status === "PROPOSED")}
-              keyExtractor={(item) => item.id}
-              renderItem={({ item }) => (
-                <View style={styles.proposalRow}>
-                  <Text style={styles.proposalSide}>{item.side.toUpperCase()}</Text>
-                  <Text style={styles.proposalPrice}>
-                    @ {item.price_cents}c
-                  </Text>
-                  <Text style={styles.proposalAmount}>
-                    ${item.amount_usd}
-                  </Text>
-                </View>
-              )}
-            />
-          )}
-        </View>
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Live Fixtures</Text>
-          {refreshing && fixtures.length === 0 ? (
-            <ActivityIndicator size="small" color={c.textSecondary} />
-          ) : fixtures.length === 0 ? (
-            <Text style={styles.empty}>No live fixtures right now</Text>
-          ) : (
-            <FlatList
-              data={fixtures}
-              keyExtractor={(item) => item.id}
-              renderItem={({ item }) => (
-                <View style={styles.fixtureRow}>
-                  <Text style={styles.fixtureName}>
-                    {item.home_team ?? "?"} vs {item.away_team ?? "?"}
-                  </Text>
-                  <Text style={styles.fixtureStatus}>
-                    {item.home_score != null
-                      ? `${item.home_score}–${item.away_score ?? 0}${item.minute != null ? ` · ${item.minute}′` : ""}`
-                      : (item.game_status ?? "LIVE")}
-                  </Text>
-                </View>
-              )}
-            />
-          )}
-        </View>
-      </View>
+      <ScreenHeader title="PRED Agent" subtitle={feedsOk ? "Feeds connected" : undefined} mode={mode} paused={paused} />
+      <ScrollView
+        contentContainerStyle={styles.content}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={c.textSecondary} />}
+      >
+        {!feedsOk && mode ? (
+          <View style={styles.stale}>
+            <Text style={styles.staleText}>STALE — data feeds offline, actions may be unavailable</Text>
+          </View>
+        ) : null}
+
+        <Card style={styles.hero}>
+          <Text style={styles.heroLabel}>Balance</Text>
+          <Text style={styles.heroValue}>{formatUsd(balance)}</Text>
+          <View style={styles.divider} />
+          <View style={styles.statsRow}>
+            <Stat label="Exposure" value={formatUsd(exposure)} />
+            <Stat label="Daily PnL" value={pnl.text} tone={pnl.tone} />
+          </View>
+        </Card>
+
+        <SectionTitle
+          title={`Needs your decision${pending.length ? ` · ${pending.length}` : ""}`}
+          action={pending.length ? "Review all" : undefined}
+          onAction={() => navigation.navigate("Proposals")}
+        />
+        {pending.length === 0 ? (
+          <Card>
+            <EmptyState title="Nothing waiting" hint="New trade proposals from the agent will show up here." />
+          </Card>
+        ) : (
+          pending.slice(0, 3).map((p) => (
+            <TouchableOpacity
+              key={p.id}
+              activeOpacity={0.8}
+              onPress={() => navigation.navigate("Proposals")}
+              style={styles.rowCard}
+            >
+              <View style={styles.rowTop}>
+                <SideChip side={p.side} />
+                {p.advisory ? <StateChip label="ADVISORY" tone="alert" /> : null}
+                <View style={{ flex: 1 }} />
+                <Icon name="chevron" size={18} color={c.textMuted} />
+              </View>
+              <View style={styles.rowBottom}>
+                <Text style={styles.mono}>@ {p.price_cents}¢</Text>
+                <Text style={styles.mono}>{formatUsd(p.amount_usd)}</Text>
+                <Text style={[styles.mono, { color: c.long }]}>+{parseFloat(p.edge_pp).toFixed(1)} pp</Text>
+              </View>
+            </TouchableOpacity>
+          ))
+        )}
+
+        <SectionTitle title="Live now" action={fixtures.length ? "See all" : undefined} onAction={() => navigation.navigate("Live")} />
+        {fixtures.length === 0 ? (
+          <Card>
+            <EmptyState title="No live matches" hint="Upcoming fixtures are on the Live tab." />
+          </Card>
+        ) : (
+          fixtures.slice(0, 4).map((f) => (
+            <TouchableOpacity
+              key={f.id}
+              activeOpacity={0.8}
+              style={styles.rowCard}
+              onPress={() => navigation.navigate("FixtureDetail", { id: f.id })}
+            >
+              <View style={styles.fixtureRow}>
+                <Text style={styles.teams} numberOfLines={1}>
+                  {f.home_team ?? "?"} <Text style={styles.vs}>vs</Text> {f.away_team ?? "?"}
+                </Text>
+                <Text style={styles.score}>
+                  {f.home_score != null ? `${f.home_score}–${f.away_score ?? 0}` : "—"}
+                </Text>
+              </View>
+              <View style={styles.rowTop}>
+                <StateChip label={f.minute != null ? `${f.minute}′` : f.game_status ?? "LIVE"} tone="short" />
+                {f.league ? <Text style={styles.league}>{f.league}</Text> : null}
+              </View>
+            </TouchableOpacity>
+          ))
+        )}
+      </ScrollView>
     </View>
   );
 };
 
-const makeStyles = (c: Colors) => StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: c.background,
-  },
-  content: {
-    padding: 16,
-  },
-  navRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
-    marginBottom: 16,
-  },
-  navButton: {
-    borderWidth: 1,
-    borderColor: c.border,
-    borderRadius: 8,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    backgroundColor: c.surface,
-  },
-  navText: {
-    color: c.text,
-    fontSize: 14,
-    fontWeight: "600",
-  },
-  statsRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginBottom: 16,
-  },
-  section: {
-    marginBottom: 16,
-  },
-  sectionTitle: {
-    color: c.text,
-    fontSize: 16,
-    fontWeight: "600",
-    marginBottom: 8,
-  },
-  fixtureRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: c.border,
-  },
-  fixtureName: {
-    color: c.text,
-    fontSize: 14,
-    fontWeight: "500",
-  },
-  fixtureStatus: {
-    fontSize: 12,
-    color: c.textSecondary,
-  },
-  proposalRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    paddingVertical: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: c.border,
-  },
-  proposalSide: {
-    color: c.text,
-    fontSize: 13,
-    fontWeight: "600",
-  },
-  proposalPrice: {
-    fontSize: 13,
-    color: c.textSecondary,
-  },
-  proposalAmount: {
-    color: c.text,
-    fontSize: 13,
-    fontWeight: "600",
-  },
-  empty: {
-    fontSize: 14,
-    color: c.textSecondary,
-    textAlign: "center",
-    paddingVertical: 20,
-  },
-});
+const makeStyles = (c: Colors) =>
+  StyleSheet.create({
+    container: { flex: 1, backgroundColor: c.background },
+    content: { paddingHorizontal: 16, paddingBottom: 32 },
+    stale: { backgroundColor: c.pausedBg, borderColor: c.pausedBorder, borderWidth: 1, borderRadius: radius.md, padding: 10, marginBottom: 12 },
+    staleText: { color: c.pausedBorder, fontSize: 12, fontWeight: "700" },
+    hero: { paddingVertical: 20 },
+    heroLabel: { color: c.textSecondary, fontSize: 12, fontWeight: "700", letterSpacing: 0.8, textTransform: "uppercase" },
+    heroValue: { color: c.text, fontFamily: MONO, fontSize: 38, fontWeight: "800", marginTop: 4, letterSpacing: -1 },
+    divider: { height: 1, backgroundColor: c.border, marginVertical: 16 },
+    statsRow: { flexDirection: "row", gap: 16 },
+    rowCard: {
+      backgroundColor: c.surface,
+      borderRadius: radius.md,
+      borderWidth: 1,
+      borderColor: c.border,
+      padding: 14,
+      marginBottom: 8,
+      gap: 10,
+    },
+    rowTop: { flexDirection: "row", alignItems: "center", gap: 8 },
+    rowBottom: { flexDirection: "row", justifyContent: "space-between" },
+    mono: { color: c.text, fontFamily: MONO, fontSize: 14, fontWeight: "700" },
+    fixtureRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 },
+    teams: { color: c.text, fontSize: 15, fontWeight: "700", flex: 1 },
+    vs: { color: c.textMuted, fontWeight: "500" },
+    score: { color: c.text, fontFamily: MONO, fontSize: 18, fontWeight: "800" },
+    league: { color: c.textSecondary, fontSize: 12 },
+  });

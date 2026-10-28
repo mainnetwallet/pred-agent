@@ -1,7 +1,7 @@
 // Theme — follows the system light/dark setting (palette from DESIGN.md).
 
 import { useMemo } from "react";
-import { useColorScheme } from "react-native";
+import { Platform, useColorScheme } from "react-native";
 
 export interface Colors {
   isDark: boolean;
@@ -31,6 +31,11 @@ export interface Colors {
   pausedBg: string;
   pausedBorder: string;
   shadow: string;
+  primarySoft: string; // tinted fills (own chat bubble, active chip)
+  longSoft: string;
+  shortSoft: string;
+  alertSoft: string;
+  tabBar: string;
 }
 
 export const lightColors: Colors = {
@@ -61,6 +66,11 @@ export const lightColors: Colors = {
   pausedBg: "#F1E0C8",
   pausedBorder: "#C2410C",
   shadow: "#000000",
+  primarySoft: "#D5E4F8",
+  longSoft: "#D4EBDD",
+  shortSoft: "#F3D9D9",
+  alertSoft: "#F1E0C8",
+  tabBar: "#F7F8FA",
 };
 
 export const darkColors: Colors = {
@@ -91,7 +101,16 @@ export const darkColors: Colors = {
   pausedBg: "#3A2A10",
   pausedBorder: "#F59E0B",
   shadow: "#000000",
+  primarySoft: "#13294A",
+  longSoft: "#0F2A1B",
+  shortSoft: "#331517",
+  alertSoft: "#3A2A10",
+  tabBar: "#0F151C",
 };
+
+export const radius = { sm: 8, md: 12, lg: 16, pill: 999 };
+export const space = { xs: 4, sm: 8, md: 12, lg: 16, xl: 24 };
+export const MONO = Platform.select({ ios: "Menlo", default: "monospace" }) as string;
 
 export function useTheme(): Colors {
   const scheme = useColorScheme();
