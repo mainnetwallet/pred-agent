@@ -8,6 +8,7 @@ from types import SimpleNamespace
 from typing import Any
 
 import httpx
+import pytest
 
 from pred_agent.auth.jwt_auth import JwtAuth, JwtTokens
 from pred_agent.control_api.background import refresh_balance_once
@@ -127,26 +128,31 @@ def _clob_auth(handler):
     )
 
 
-def test_ensure_credentials_creates_for_existing_account_without_partner_key():
-    """Docs: derive only recovers; an account made on the PRED site has no L2 creds yet."""
-    seen: list[tuple[str, str, bool]] = []
-
+def test_ensure_credentials_only_recovers_existing_credentials():
     def handler(request: httpx.Request) -> httpx.Response:
-        seen.append((request.method, request.url.path, "x-aggregator-api-key" in request.headers))
-        if request.url.path.endswith("derive-api-key"):
-            return httpx.Response(401, json={"error": "invalid_auth"})
+        assert request.url.path.endswith("derive-api-key")
         return httpx.Response(200, json={"apiKey": "k", "secret": "c2VjcmV0", "passphrase": "p"})
 
     auth = _clob_auth(handler)
     creds = auth.ensure_credentials(0)
     assert creds.api_key == "k"
-    assert seen[0][1] == "/clob/auth/derive-api-key"
-    assert seen[1] == ("POST", "/clob/auth/api-key", False)
+
+
+def test_create_nonce_already_used_recovers_by_deriving_same_nonce():
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request.url.path)
+        if request.url.path.endswith("/auth/api-key"):
+            return httpx.Response(400, json={"error": "nonce_already_used"})
+        return httpx.Response(200, json={"apiKey": "k", "secret": "c2VjcmV0", "passphrase": "p"})
+
+    creds = _clob_auth(handler).create_credentials(0)
+    assert creds.api_key == "k"
+    assert seen == ["/clob/auth/api-key", "/clob/auth/derive-api-key"]
 
 
 def test_ensure_credentials_does_not_mask_server_errors():
-    import pytest
-
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(503, json={"error": "down"})
 
