@@ -415,3 +415,92 @@ def test_panic_cancels_live_orders(monkeypatch):
     assert ctl.approve(_proposal(ctl).id, "app") is not None
     result = ctl.panic()
     assert result["orders_cancelled"] == 1 and result["live_cancel_failed"] == 0 and ctl.paused
+
+
+# ── fill sync / positions / reconcile false-positive ─────────────────────────
+
+
+def _trade(order_id: str, tid: str, qty: str, price: str = "52") -> dict[str, Any]:
+    return {"trade_history_id": tid, "order_id": order_id, "market_id": MARKET, "side": "long",
+            "price": price, "quantity": qty, "fee_amount": "0.01", "transaction_hash": "0xabc"}
+
+
+def test_sync_fills_applies_once_and_marks_filled(monkeypatch):
+    t = FakeTransport()
+    ex = _executor(monkeypatch, t)
+    order = ex.place_from_proposal(proposal_id="p", intent=_intent(quantity=Decimal("4")))
+    assert order.state == OrderState.OPEN
+    t._get = {"success": True, "trade_history": [_trade("ord_1", "t1", "1.5"), _trade("ord_1", "t2", "2.5")]}
+    assert ex.sync_fills() == {"new_fills": 2, "resolved_unknown": 0}
+    assert order.state == OrderState.FILLED and order.filled_qty == "4"
+    assert ex.sync_fills()["new_fills"] == 0                  # idempotent: no double counting
+    assert len(ex.sm.list_fills()) == 2
+
+
+def test_partial_fill_then_unknown_order_recovers_and_unblocks(monkeypatch):
+    t = FakeTransport(post=PredTransportError(503, "x", raw_body='{"order_id":"ord_u"}'))
+    ex = _executor(monkeypatch, t)
+    order = ex.place_from_proposal(proposal_id="p", intent=_intent(quantity=Decimal("4")))
+    assert order.state == OrderState.UNKNOWN and ex.sm.is_market_blocked(PARENT)
+    t._get = {"success": True, "trade_history": [_trade("ord_u", "t9", "4")]}
+    assert ex.sync_fills() == {"new_fills": 1, "resolved_unknown": 1}
+    assert order.state == OrderState.FILLED
+    assert not ex.sm.is_market_blocked(PARENT) and not ex.sm.is_market_blocked(MARKET)
+
+
+def test_filled_resting_order_is_not_flagged_unknown(monkeypatch):
+    """The false positive: a resting order that fully fills vanishes from open-orders."""
+    t = FakeTransport()
+    ex = _executor(monkeypatch, t)
+    order = ex.place_from_proposal(proposal_id="p", intent=_intent(quantity=Decimal("4")))
+    t._get = {"success": True, "trade_history": [_trade("ord_1", "t1", "4")], "orders": []}
+    report = ex.sync()
+    assert order.state == OrderState.FILLED and report["unresolved"] == []
+    assert not ex.sm.is_market_blocked(PARENT)
+
+
+def test_vanished_without_fills_stays_unknown_then_recovers_when_visible(monkeypatch):
+    t = FakeTransport(get={"success": True, "trade_history": [], "orders": []})
+    ex = _executor(monkeypatch, t)
+    order = ex.place_from_proposal(proposal_id="p", intent=_intent())
+    assert ex.sync()["unresolved"] == [order.id] and ex.sm.is_market_blocked(PARENT)
+    t._get = {"success": True, "trade_history": [], "orders": [
+        {"order_id": "ord_1", "market_id": MARKET, "price": "52", "quantity": "3.8", "remaining_quantity": "3.8"}]}
+    assert ex.sync()["unresolved"] == [] and order.state == OrderState.OPEN
+    assert not ex.sm.is_market_blocked(PARENT)               # delayed portfolio listing resolved
+
+
+def test_sync_fills_bad_shape_fails_closed(monkeypatch):
+    ex = _executor(monkeypatch, FakeTransport(get={"success": False}))
+    with pytest.raises(ReconcileError):
+        ex.sync_fills()
+
+
+def test_fetch_positions_normalises_and_skips_ambiguous(monkeypatch):
+    rows = [
+        {"market_id": MARKET, "parent_market_id": PARENT, "side": "long", "quantity": "3.8",
+         "average_price": "52", "amount": "1.976"},
+        {"market_id": "m2", "side": "long", "quantity": "1", "average_price": "0.52", "amount": "0.52"},  # dollars?
+        {"market_id": "m3", "side": "sideways", "quantity": "1", "average_price": "50", "amount": "0.5"},
+        {"market_id": "m4", "side": "short", "quantity": "0", "average_price": "50", "amount": "0"},
+    ]
+    ex = _executor(monkeypatch, FakeTransport(get={"success": True, "positions": rows}))
+    out = ex.fetch_positions()
+    assert [p["market_id"] for p in out] == [MARKET]
+    assert out[0]["avg_price_cents"] == Decimal("52") and out[0]["cost_usd"] == Decimal("1.976")
+
+
+def test_controller_sync_mirrors_positions_and_blocks_on_failure(monkeypatch):
+    t = FakeTransport(get={"success": True, "trade_history": [], "orders": [], "positions": [
+        {"market_id": MARKET, "parent_market_id": PARENT, "side": "long", "quantity": "2",
+         "average_price": "55", "amount": "1.1"}]})
+    ctl = _controller(monkeypatch, _executor(monkeypatch, t))
+    report = ctl.sync_live()
+    assert report is not None and report["positions"] == 1
+    pos = ctl.positions.get_position(MARKET)
+    assert pos.quantity == Decimal("2") and pos.avg_price_cents == Decimal("55")
+    t._get = {"success": False}
+    assert ctl.sync_live() is None and ctl.live_sync_error
+    prop = _proposal(ctl)
+    assert ctl.approve(prop.id, "app") is None and "sync" in (ctl.last_error or "")
+    assert prop.status == ProposalStatus.PROPOSED

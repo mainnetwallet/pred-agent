@@ -548,6 +548,13 @@ class LiveExecutor:
             pred_id = rec.pred_order_id
             row = remote_by_id.get(str(pred_id)) if pred_id else None
             if row is None:
+                total = Decimal(str(rec.quantity))
+                done = self._filled_for(rec)
+                if done > 0 and done >= total:
+                    rec.state = OrderState.FILLED  # fully matched: fills prove it
+                    rec.filled_qty = plain_decimal(done)
+                    rec.remaining_qty = "0"
+                    continue
                 if rec.state != OrderState.UNKNOWN:
                     rec.state = OrderState.UNKNOWN
                 for mkt in (rec.market_id, rec.parent_market_id):
@@ -561,6 +568,7 @@ class LiveExecutor:
             rec.filled_qty = str(total - remaining)
             rec.state = OrderState.PARTIAL if remaining < total else OrderState.OPEN
             refreshed += 1
+        self._unblock_resolved()
 
         adopted = 0
         known = {rec.pred_order_id for rec in self.sm.list_orders() if rec.pred_order_id}
@@ -591,6 +599,108 @@ class LiveExecutor:
             "adopted": adopted,
             "unresolved": unresolved,
         }
+
+
+    # ------------------------------------------------------------------ #
+    # Fills and positions (exchange is the source of truth)
+    # ------------------------------------------------------------------ #
+
+    def _filled_for(self, rec: OrderRecord) -> Decimal:
+        return sum(
+            (Decimal(f.quantity) for f in self.sm.list_fills() if f.order_id == rec.id),
+            Decimal(0),
+        )
+
+    def _unblock_resolved(self) -> None:
+        """Unblock markets that no longer have any UNKNOWN order."""
+        still = {
+            m for rec in self.sm.list_orders() if rec.state == OrderState.UNKNOWN
+            for m in (rec.market_id, rec.parent_market_id) if m
+        }
+        for mkt in self.sm.blocked_markets() - still:
+            self.sm.unblock_market(mkt)
+
+    def sync_fills(self, *, limit: int = 100) -> dict[str, int]:
+        """Apply the newest trade-history rows to local orders (deduped by trade_history_id).
+
+        Resting orders that fill later are only visible here. Uses the amounts PRED reports and
+        never subtracts fees from them. Unrecognised replies fail closed.
+        """
+        body = self.transport.get(
+            f"{self._order_prefix()}/api/v1/portfolio/trade-history",
+            params={"limit": limit, "offset": 0},
+        )
+        if not isinstance(body, dict) or body.get("success") is False or not isinstance(
+            body.get("trade_history"), list
+        ):
+            raise ReconcileError("trade-history reply has an unrecognised shape; refusing to guess")
+        by_pred = {r.pred_order_id: r for r in self.sm.list_orders() if r.pred_order_id}
+        applied = 0
+        for row in body["trade_history"]:
+            rec = by_pred.get(str(row.get("order_id") or ""))
+            if rec is None or not row.get("trade_history_id"):
+                continue
+            before = len(self.sm.list_fills())
+            self.sm.apply_fill(
+                fill_id=str(row["trade_history_id"]), match_id=None, order_id=rec.id,
+                price_cents=int(Decimal(str(row.get("price", "0"))) * Decimal(10_000)),
+                quantity=str(row.get("quantity", "0")),
+                matched_on_chain=bool(row.get("transaction_hash")),
+                fee_usd=str(row.get("fee_amount") or "0"),
+            )
+            applied += len(self.sm.list_fills()) - before
+        resolved = 0
+        for rec in by_pred.values():
+            if rec.state not in _ACTIVE_STATES and rec.state != OrderState.UNKNOWN:
+                continue
+            done = self._filled_for(rec)
+            if done <= 0:
+                continue
+            total = Decimal(str(rec.quantity))
+            rec.filled_qty = plain_decimal(done)
+            rec.remaining_qty = plain_decimal(max(total - done, Decimal(0)))
+            was_unknown = rec.state == OrderState.UNKNOWN
+            rec.state = OrderState.FILLED if done >= total else OrderState.PARTIAL
+            resolved += int(was_unknown)
+        self._unblock_resolved()
+        return {"new_fills": applied, "resolved_unknown": resolved}
+
+    def fetch_positions(self) -> list[dict[str, Any]]:
+        """Open positions as PRED reports them, normalised; ambiguous rows are skipped.
+
+        ``average_price`` must be unambiguously cents (> 1 and < 100); anything else is
+        dropped rather than guessed, because a unit mistake would corrupt risk limits.
+        """
+        body = self.transport.get(
+            f"{self._order_prefix()}/api/v1/portfolio/positions", params={"verbose": "true"}
+        )
+        if not isinstance(body, dict) or body.get("success") is False or not isinstance(
+            body.get("positions"), list
+        ):
+            raise ReconcileError("positions reply has an unrecognised shape; refusing to guess")
+        out: list[dict[str, Any]] = []
+        for row in body["positions"]:
+            try:
+                qty = Decimal(str(row["quantity"]))
+                avg = Decimal(str(row["average_price"]))
+                amount = Decimal(str(row["amount"]))
+                side = str(row["side"])
+                market_id = str(row["market_id"])
+            except (KeyError, ArithmeticError, ValueError):
+                continue
+            if qty <= 0 or side not in ("long", "short") or not Decimal(1) < avg < Decimal(100):
+                continue
+            out.append({
+                "market_id": market_id, "parent_market_id": row.get("parent_market_id") or "",
+                "side": side, "quantity": qty, "avg_price_cents": avg, "cost_usd": amount,
+            })
+        return out
+
+    def sync(self) -> dict[str, Any]:
+        """One reconcile pass: fills first (so fully-filled orders are not mistaken for lost)."""
+        fills = self.sync_fills()
+        report = self.reconcile_startup()
+        return {**report, **fills}
 
 
 def _order_id_from_body(raw_body: str | None) -> str | None:

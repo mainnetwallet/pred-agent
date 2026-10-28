@@ -164,6 +164,9 @@ class OrderStateMachine:
     def unblock_market(self, market_id: str) -> None:
         self._unknown_markets.discard(market_id)
 
+    def blocked_markets(self) -> set[str]:
+        return set(self._unknown_markets)
+
     def is_market_blocked(self, market_id: str) -> bool:
         return market_id in self._unknown_markets
 

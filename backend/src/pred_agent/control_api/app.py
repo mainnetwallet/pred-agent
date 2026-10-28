@@ -398,12 +398,29 @@ def create_app(*, background: bool = False) -> FastAPI:  # noqa: PLR0915
                         f"Exchange open orders: {runtime.startup_report['exchange_open_orders']}, "
                         f"unresolved: {len(runtime.startup_report['unresolved'])}."
                     )
-                    return
+                    break
                 except LiveSetupError as exc:
                     controller.disarm_live(str(exc))
                 except Exception as exc:  # noqa: BLE001
                     controller.disarm_live(f"unexpected setup failure: {type(exc).__name__}")
                 await asyncio.sleep(60)
+            # Armed: keep mirroring fills / open orders / positions from PRED.
+            last_unresolved = 0
+            alerted_error: str | None = None
+            while True:
+                await asyncio.sleep(30)
+                report = await asyncio.to_thread(controller.sync_live)
+                if report is None:
+                    err = controller.live_sync_error
+                    if err and err != alerted_error:  # alert on change, not every 30 s
+                        alerted_error = err
+                        await _alert(f"⚠️ LIVE sync failing — new orders blocked: {err}")
+                    continue
+                alerted_error = None
+                unresolved = len(report.get("unresolved", []))
+                if unresolved > last_unresolved:
+                    await _alert(f"⚠️ {unresolved} LIVE order(s) UNKNOWN — markets blocked until reconciled.")
+                last_unresolved = unresolved
 
         if background and settings.live_trading:
             live_task = asyncio.create_task(_arm_live_loop())

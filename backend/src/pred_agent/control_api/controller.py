@@ -75,6 +75,8 @@ class AgentController:
         # Why the last approve()/propose call returned None (shown to the operator).
         self.last_error: str | None = None
         self._live_lock = threading.Lock()  # one live approval at a time (no double placement)
+        self.live_sync_error: str | None = None  # last failed exchange sync (blocks new LIVE orders)
+        self.live_last_sync: dict[str, Any] | None = None
         self.executor: Any = PaperExecutor(
             db=OrderRepo(db_session_factory) if db_session_factory else None
         )
@@ -127,7 +129,8 @@ class AgentController:
         if self.mode == "LIVE":
             live_info = {
                 "live_ready": self.live_execution_ready,
-                "live_note": None if self.live_execution_ready else self.live_not_ready_reason,
+                "live_note": (self.live_not_ready_reason if not self.live_execution_ready
+                          else self.live_sync_error),
             }
         return {
             **live_info,
@@ -184,6 +187,54 @@ class AgentController:
         self.executor = runtime
         self.live_execution_ready = True
         self.live_not_ready_reason = None
+
+    def sync_live(self) -> dict[str, Any] | None:
+        """Pull fills/open orders/positions from PRED and mirror them locally. Never raises.
+
+        PRED is the source of truth: positions are upserted from its report (quantity and
+        average price), never invented from our own bookkeeping. A failed sync blocks NEW live
+        orders (fail closed) until the next successful pass.
+        """
+        rt = self.live
+        if rt is None:
+            return None
+        with self._live_lock:
+            try:
+                report = rt.executor.sync()
+                remote = rt.executor.fetch_positions()
+            except Exception as exc:  # noqa: BLE001
+                self.live_sync_error = f"{type(exc).__name__}: {exc}"[:200]
+                log.error("live sync failed: %s", self.live_sync_error)
+                return None
+            seen = set()
+            for pos in remote:
+                seen.add(pos["market_id"])
+                self.positions.open_position(
+                    market_id=pos["market_id"],
+                    parent_id=self._fixture_for(pos["market_id"]) or pos["parent_market_id"],
+                    side=pos["side"], quantity=pos["quantity"],
+                    avg_price_cents=pos["avg_price_cents"], cost_usd=pos["cost_usd"],
+                )
+            missing = [p.market_id for p in self.positions.list_positions() if p.market_id not in seen]
+            if missing:
+                # Closed/settled/exited on the exchange: realized PnL is unknown here, so we only
+                # report it instead of booking a made-up number.
+                log.warning("positions missing on exchange (not auto-closed): %s", missing)
+            self.live_sync_error = None
+            self.live_last_sync = {**report, "positions": len(remote), "missing_on_exchange": missing}
+            return self.live_last_sync
+
+    def _fee_target_bps(self, market_id: str) -> Decimal:
+        """Discovery fee target for DISPLAY estimates only; orders never use this (they sign the
+        exact recomputed rate and refuse when discovery has no fee). 250 only when unknown."""
+        ctx = self.market_lookup(market_id) if self.market_lookup else None
+        if ctx is not None and ctx.fee_target_bps is not None:
+            return Decimal(ctx.fee_target_bps)
+        return Decimal(250)
+
+    def _fixture_for(self, market_id: str) -> str | None:
+        existing = self.positions.get_position(market_id)
+        return existing.parent_id if existing else None
 
     def disarm_live(self, reason: str) -> None:
         """Setup failed or was lost: LIVE approvals fail closed with this reason."""
@@ -252,6 +303,8 @@ class AgentController:
         rt = self.live
         if not self.live_execution_ready or rt is None:
             return self._fail(f"live execution not ready: {self.live_not_ready_reason or 'not armed'}")
+        if self.live_sync_error:
+            return self._fail(f"exchange sync failing, refusing new orders: {self.live_sync_error}")
         prop = self.proposals.get(proposal_id)
         if prop is None:
             return self._fail("proposal not found")
@@ -393,7 +446,7 @@ class AgentController:
         if price_cents <= 0:
             return None, "no live price for this market — book unavailable"
         qty = amount_usd / (price_cents / 100)
-        est_fee = amount_usd * Decimal(250) / Decimal(10000)
+        est_fee = amount_usd * self._fee_target_bps(market_id) / Decimal(10000)
         prop = self.proposals.create(
             mode=self.mode, advisory=False, fixture_id=fixture_id, market_id=market_id,
             side=side, order_type="limit", price_cents=price_cents, quantity=qty,
@@ -413,7 +466,7 @@ class AgentController:
             return None, f"no open position for market {market_id}"
         exit_side = "short" if pos.side == "long" else "long"
         price = pos.avg_price_cents
-        est_fee = pos.cost_usd * Decimal(250) / Decimal(10000)
+        est_fee = pos.cost_usd * self._fee_target_bps(market_id) / Decimal(10000)
         prop = self.proposals.create(
             mode=self.mode, advisory=False, fixture_id=pos.parent_id, market_id=market_id,
             side=exit_side, order_type="limit", price_cents=price, quantity=pos.quantity,
