@@ -15,7 +15,8 @@ import * as LocalAuthentication from "expo-local-authentication";
 import { useUIStore, useProposalsStore } from "../store/index";
 import { Colors, useTheme, useThemedStyles } from "../utils/theme";
 import { api } from "../services/api";
-import { StatusBanner, OfflineBadge } from "../components/common";
+import { useNavigation } from "@react-navigation/native";
+import { EmptyState, ScreenHeader, SideChip } from "../components/ui";
 import { formatEdge, formatDateTime } from "../utils/format";
 
 export const ProposalsScreen: React.FC = () => {
@@ -23,6 +24,7 @@ export const ProposalsScreen: React.FC = () => {
   const styles = useThemedStyles(makeStyles);
   const { proposals, setProposals } = useProposalsStore();
   const { mode, paused } = useUIStore();
+  const navigation = useNavigation<any>();
   const [refreshing, setRefreshing] = useState(false);
   const [changingAmount, setChangingAmount] = useState<string | null>(null);
   const [newAmount, setNewAmount] = useState("");
@@ -102,16 +104,15 @@ export const ProposalsScreen: React.FC = () => {
     return (
       <View style={styles.card}>
         <View style={styles.cardHeader}>
-          <Text style={styles.modeTag}>
-            {item.advisory ? "[ADVISORY] " : ""}{item.mode}
-          </Text>
+          <View style={{ flexDirection: "row", gap: 8, alignItems: "center" }}>
+            <SideChip side={item.side} />
+            <Text style={styles.modeTag}>
+              {item.advisory ? "ADVISORY · " : ""}{item.mode}
+            </Text>
+          </View>
           <Text style={styles.expiry}>Expires: {formatDateTime(item.expires_at)}</Text>
         </View>
         <Text style={styles.fixture}>{item.fixture_id}</Text>
-        <View style={styles.detailRow}>
-          <Text style={styles.label}>Side:</Text>
-          <Text style={styles.value}>{item.side.toUpperCase()}</Text>
-        </View>
         <View style={styles.detailRow}>
           <Text style={styles.label}>Price:</Text>
           <Text style={styles.value}>@{item.price_cents}c</Text>
@@ -233,18 +234,15 @@ export const ProposalsScreen: React.FC = () => {
 
   return (
     <View style={styles.container}>
-      <StatusBanner mode={mode} paused={paused} />
-      <View style={styles.content}>
-        <OfflineBadge stale={!paused} lastUpdate={null} />
-        <FlatList
-          data={proposals}
-          keyExtractor={(item) => item.id}
-          renderItem={renderItem}
-          refreshControl={
-            <ReactNativeRefreshControl refreshing={refreshing} onRefresh={loadProposals} />
-          }
-        />
-      </View>
+      <ScreenHeader title="Proposals" subtitle="Approve needs biometric" mode={mode} paused={paused} onBack={() => navigation.goBack()} />
+      <FlatList
+        data={proposals.filter((p) => p.status === "PROPOSED")}
+        keyExtractor={(item) => item.id}
+        renderItem={renderItem}
+        contentContainerStyle={styles.content}
+        ListEmptyComponent={<EmptyState title="No pending proposals" hint="Pull down to refresh." />}
+        refreshControl={<ReactNativeRefreshControl refreshing={refreshing} onRefresh={loadProposals} />}
+      />
     </View>
   );
 };
@@ -257,22 +255,21 @@ const makeStyles = (c: Colors) => StyleSheet.create({
     backgroundColor: c.background,
   },
   content: {
-    padding: 16,
+    paddingHorizontal: 16,
+    paddingBottom: 32,
   },
   card: {
     backgroundColor: c.surface,
-    borderRadius: 12,
+    borderRadius: 16,
     padding: 16,
     marginBottom: 12,
-    shadowColor: c.shadow,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    borderWidth: 1,
+    borderColor: c.border,
   },
   cardHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
+    alignItems: "center",
     marginBottom: 12,
   },
   modeTag: {
@@ -329,8 +326,9 @@ const makeStyles = (c: Colors) => StyleSheet.create({
   },
   button: {
     flex: 1,
-    paddingVertical: 10,
-    borderRadius: 8,
+    minHeight: 46,
+    justifyContent: "center",
+    borderRadius: 12,
     alignItems: "center",
     marginHorizontal: 4,
   },

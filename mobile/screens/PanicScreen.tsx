@@ -14,11 +14,13 @@ import * as LocalAuthentication from "expo-local-authentication";
 import { useUIStore } from "../store/index";
 import { Colors, useThemedStyles } from "../utils/theme";
 import { api } from "../services/api";
-import { StatusBanner } from "../components/common";
+import { useNavigation } from "@react-navigation/native";
+import { ScreenHeader } from "../components/ui";
 
 export const PanicScreen: React.FC = () => {
   const styles = useThemedStyles(makeStyles);
   const { mode, paused } = useUIStore();
+  const navigation = useNavigation<any>();
   const [confirming, setConfirming] = useState(false);
   const [results, setResults] = useState<any[]>([]);
 
@@ -64,7 +66,7 @@ export const PanicScreen: React.FC = () => {
 
   return (
     <View style={styles.container}>
-      <StatusBanner mode={mode} paused={paused} />
+      <ScreenHeader title="Panic" subtitle="Pause everything and cancel open orders" mode={mode} paused={paused} onBack={() => navigation.goBack()} hidePanic />
       <View style={styles.content}>
         <View style={styles.panicCard}>
           <Text style={styles.panicTitle}>PANIC</Text>
@@ -115,11 +117,7 @@ const makeStyles = (c: Colors) => StyleSheet.create({
     padding: 24,
     alignItems: "center",
     marginBottom: 20,
-    shadowColor: c.shadow,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-    elevation: 5,
+    elevation: 0,
     borderWidth: 2,
     borderColor: c.danger,
   },

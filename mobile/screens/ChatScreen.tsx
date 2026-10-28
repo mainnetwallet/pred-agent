@@ -20,8 +20,10 @@ import {
   View,
 } from "react-native";
 import { api } from "../services/api";
-import { useNavigation } from "@react-navigation/native";
 import { ChatCard } from "../types/api";
+import { useUIStore } from "../store/index";
+import { Colors, radius, useTheme, useThemedStyles } from "../utils/theme";
+import { Icon, ScreenHeader } from "../components/ui";
 
 // ── Types ─────────────────────────────────────────────────────
 interface LocalMessage {
@@ -55,6 +57,7 @@ function CardView({
   onRejectProposal: (id: string) => void;
   onAction: (data: Record<string, any>) => void;
 }) {
+  const styles = useThemedStyles(makeStyles);
   if (card.type === "fixture_list") {
     const fixtures: any[] = (card.data as any).fixtures ?? [];
     return (
@@ -147,7 +150,9 @@ export default function ChatScreen() {
   const [error, setError] = useState<string | null>(null);
   const [toolName, setToolName] = useState<string | null>(null);
   const scrollRef = useRef<ScrollView>(null);
-  const navigation = useNavigation<any>();
+  const c = useTheme();
+  const styles = useThemedStyles(makeStyles);
+  const { mode, paused } = useUIStore();
 
   // Welcome message
   useEffect(() => {
@@ -291,16 +296,18 @@ export default function ChatScreen() {
     <KeyboardAvoidingView
       style={styles.container}
       behavior={Platform.OS === "ios" ? "padding" : undefined}
-      keyboardVerticalOffset={Platform.OS === "ios" ? 88 : 0}
+      keyboardVerticalOffset={0}
     >
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
-          <Text style={styles.backText}>← Back</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Chat</Text>
-        <View style={styles.backBtn} />
-      </View>
+      <ScreenHeader
+        title="Agent chat"
+        mode={mode}
+        paused={paused}
+        right={
+          <TouchableOpacity style={styles.headerBtn} onPress={clearChat} accessibilityLabel="Clear chat" hitSlop={8}>
+            <Icon name="trash" size={19} color={c.textSecondary} />
+          </TouchableOpacity>
+        }
+      />
 
       {/* Messages list */}
       <ScrollView
@@ -314,9 +321,9 @@ export default function ChatScreen() {
             key={msg.id}
             style={[styles.msgBubble, msg.role === "user" ? styles.userBubble : styles.aiBubble]}
           >
-            <Text style={styles.roleLabel}>{msg.role === "user" ? "You" : "Agent"}</Text>
+            {msg.role === "assistant" && <Text style={styles.roleLabel}>Agent</Text>}
             {/* textContent equivalent: Text component never executes scripts */}
-            <Text style={styles.msgText}>{msg.content}</Text>
+            <Text style={[styles.msgText, msg.role === "user" && styles.userText]}>{msg.content}</Text>
             {msg.cards?.map((card, i) => (
               <CardView
                 key={i}
@@ -332,7 +339,7 @@ export default function ChatScreen() {
         ))}
         {loading && (toolName || messages[messages.length - 1]?.role === "user") && (
           <View style={[styles.msgBubble, styles.aiBubble]}>
-            <ActivityIndicator size="small" color="#4c8dff" />
+            <ActivityIndicator size="small" color={c.primary} />
             <Text style={styles.loadingText}>{toolName ? `Using ${toolName}…` : "Thinking…"}</Text>
           </View>
         )}
@@ -350,9 +357,6 @@ export default function ChatScreen() {
             <Text style={styles.chipText}>{chip.label}</Text>
           </TouchableOpacity>
         ))}
-        <TouchableOpacity style={[styles.chip, styles.chipDanger]} onPress={clearChat}>
-          <Text style={styles.chipText}>🗑 Clear</Text>
-        </TouchableOpacity>
       </ScrollView>
 
       {/* Input row */}
@@ -362,7 +366,8 @@ export default function ChatScreen() {
           value={input}
           onChangeText={setInput}
           placeholder="Chat in Bengali, Banglish or English…"
-          placeholderTextColor="#8a90a0"
+          placeholderTextColor={c.placeholder}
+          keyboardAppearance={c.isDark ? "dark" : "light"}
           multiline
           maxLength={4000}
           returnKeyType="send"
@@ -382,57 +387,46 @@ export default function ChatScreen() {
 }
 
 // ── Styles ────────────────────────────────────────────────────
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#0f1115" },
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: "#272b35",
-  },
-  backBtn: { paddingHorizontal: 4, paddingVertical: 4, minWidth: 56 },
-  backText: { color: "#4c8dff", fontSize: 14, fontWeight: "600" },
-  headerTitle: { color: "#e8eaf0", fontSize: 16, fontWeight: "700" },
+const makeStyles = (c: Colors) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: c.background },
+  headerBtn: { width: 40, height: 40, borderRadius: radius.pill, alignItems: "center", justifyContent: "center", backgroundColor: c.surface, borderWidth: 1, borderColor: c.border },
   messages: { flex: 1 },
   messagesContent: { padding: 12, gap: 10, paddingBottom: 8 },
-  msgBubble: { borderRadius: 12, padding: 12, maxWidth: "85%" },
-  userBubble: { backgroundColor: "#1e2a3a", alignSelf: "flex-end", borderRadius: 12 },
-  aiBubble: { backgroundColor: "#1a1e26", alignSelf: "flex-start", borderColor: "#272b35", borderWidth: 1 },
-  roleLabel: { fontSize: 10, color: "#8a90a0", marginBottom: 4 },
-  msgText: { color: "#e8eaf0", fontSize: 14, lineHeight: 20 },
-  loadingText: { color: "#8a90a0", fontSize: 13, marginTop: 4 },
-  errorBanner: { backgroundColor: "#2a1518", borderRadius: 8, padding: 10, marginHorizontal: 4 },
-  errorText: { color: "#e5484d", fontSize: 13 },
+  msgBubble: { borderRadius: radius.lg, padding: 12, maxWidth: "88%" },
+  userBubble: { backgroundColor: c.primary, alignSelf: "flex-end", borderBottomRightRadius: 4 },
+  aiBubble: { backgroundColor: c.surface, alignSelf: "flex-start", borderColor: c.border, borderWidth: 1, borderBottomLeftRadius: 4 },
+  roleLabel: { fontSize: 10, color: c.textMuted, fontWeight: "800", letterSpacing: 0.6, textTransform: "uppercase", marginBottom: 4 },
+  msgText: { color: c.text, fontSize: 15, lineHeight: 21 },
+  userText: { color: c.onAccent },
+  loadingText: { color: c.textSecondary, fontSize: 13, marginTop: 4 },
+  errorBanner: { backgroundColor: c.shortSoft, borderRadius: radius.md, padding: 10, marginHorizontal: 4 },
+  errorText: { color: c.short, fontSize: 13 },
 
-  chips: { maxHeight: 48, borderTopWidth: 1, borderTopColor: "#272b35" },
+  chips: { maxHeight: 52, borderTopWidth: 1, borderTopColor: c.border },
   chipsContent: { paddingHorizontal: 12, paddingVertical: 8, gap: 8 },
-  chip: { backgroundColor: "#1a1e26", borderRadius: 999, paddingHorizontal: 12, paddingVertical: 6, borderWidth: 1, borderColor: "#272b35" },
-  chipDanger: { borderColor: "#e5484d44" },
-  chipText: { color: "#e8eaf0", fontSize: 12 },
+  chip: { backgroundColor: c.surface, borderRadius: radius.pill, paddingHorizontal: 14, paddingVertical: 8, borderWidth: 1, borderColor: c.border },
+  chipText: { color: c.text, fontSize: 13, fontWeight: "600" },
 
-  inputRow: { flexDirection: "row", padding: 12, gap: 8, borderTopWidth: 1, borderTopColor: "#272b35", alignItems: "flex-end" },
-  textInput: { flex: 1, backgroundColor: "#181b22", color: "#e8eaf0", borderRadius: 10, padding: 10, fontSize: 14, maxHeight: 100, borderWidth: 1, borderColor: "#272b35" },
-  sendBtn: { backgroundColor: "#4c8dff", borderRadius: 10, paddingHorizontal: 16, paddingVertical: 10, justifyContent: "center" },
+  inputRow: { flexDirection: "row", padding: 12, gap: 8, borderTopWidth: 1, borderTopColor: c.border, alignItems: "flex-end" },
+  textInput: { flex: 1, backgroundColor: c.inputBackground, color: c.text, borderRadius: radius.md, paddingHorizontal: 14, paddingVertical: 10, fontSize: 15, maxHeight: 110, borderWidth: 1, borderColor: c.border },
+  sendBtn: { backgroundColor: c.primary, borderRadius: radius.md, paddingHorizontal: 18, minHeight: 44, justifyContent: "center" },
   sendBtnDisabled: { opacity: 0.4 },
-  sendText: { color: "#fff", fontSize: 14, fontWeight: "600" },
+  sendText: { color: c.onAccent, fontSize: 15, fontWeight: "700" },
 
   // Cards
-  card: { marginTop: 8, borderRadius: 8, padding: 10, backgroundColor: "#0f1115", borderWidth: 1, borderColor: "#272b35" },
-  cardTitle: { fontSize: 10, color: "#8a90a0", fontWeight: "700", textTransform: "uppercase", marginBottom: 6 },
-  cardBody: { color: "#e8eaf0", fontSize: 13, marginBottom: 4 },
-  cardMeta: { color: "#8a90a0", fontSize: 12 },
+  card: { marginTop: 8, borderRadius: radius.md, padding: 10, backgroundColor: c.background, borderWidth: 1, borderColor: c.border },
+  cardTitle: { fontSize: 10, color: c.textSecondary, fontWeight: "800", letterSpacing: 0.8, textTransform: "uppercase", marginBottom: 6 },
+  cardBody: { color: c.text, fontSize: 13, marginBottom: 4 },
+  cardMeta: { color: c.textSecondary, fontSize: 12 },
   cardActions: { flexDirection: "row", gap: 8, marginTop: 8 },
-  btn: { borderRadius: 8, paddingHorizontal: 14, paddingVertical: 7 },
-  btnOk: { backgroundColor: "#2fbf71" },
-  btnBad: { backgroundColor: "#e5484d" },
-  btnText: { color: "#fff", fontSize: 13, fontWeight: "600" },
+  btn: { borderRadius: radius.sm, paddingHorizontal: 14, minHeight: 40, justifyContent: "center" },
+  btnOk: { backgroundColor: c.long },
+  btnBad: { backgroundColor: c.short },
+  btnText: { color: c.onAccent, fontSize: 13, fontWeight: "700" },
 
   fixtureRow: { flexDirection: "row", alignItems: "center", gap: 6, paddingVertical: 3 },
-  badge: { fontSize: 10, fontWeight: "700", paddingHorizontal: 5, paddingVertical: 2, borderRadius: 4 },
-  badgeLive: { backgroundColor: "#e5484d22", color: "#e5484d" },
-  badgeUpcoming: { backgroundColor: "#4c8dff22", color: "#4c8dff" },
-  fixtureText: { color: "#e8eaf0", fontSize: 13, flex: 1 },
+  badge: { fontSize: 10, fontWeight: "700", paddingHorizontal: 5, paddingVertical: 2, borderRadius: 4, overflow: "hidden" },
+  badgeLive: { backgroundColor: c.shortSoft, color: c.short },
+  badgeUpcoming: { backgroundColor: c.primarySoft, color: c.primary },
+  fixtureText: { color: c.text, fontSize: 13, flex: 1 },
 });

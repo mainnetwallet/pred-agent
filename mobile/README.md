@@ -29,13 +29,17 @@ in the server environment (Render env vars). The session token is stored in
 `expo-secure-store` (Keychain/Keystore). Optionally prefill the URL with
 `EXPO_PUBLIC_API_BASE`. Log out from Limits & settings.
 
-## Screens
+## Navigation
 
-- **Login** — server URL, username, password
-- **Home** — status strip (PAPER/LIVE + paused), balance, exposure, daily PnL
-- **Proposals** — card stack, Approve (biometric), Change amount, Reject
-- **Panic** — always reachable, two-step confirm, cancel results
-- **Limits & settings** — view/edit limits within bounds, pause/resume, devices
+Bottom tab bar: **Home · Live · Chat · Position · Settings**. Panic is reachable from the
+header of every tab (red triangle button) and from Settings.
+
+- **Home** — balance, exposure, daily PnL, proposals needing a decision, live matches
+- **Live** — Live now / Upcoming fixtures; tap one for fair probability, quotes, research
+- **Chat** — talk to the agent (Bengali, Banglish, English)
+- **Position** — Positions (Close → exit proposal), Orders (Cancel), exit Rules
+- **Settings** — pause/resume, limits, devices, account, Panic shortcut
+- Stack screens: Proposals (Approve/Reject, biometric), Panic, Fixture detail, Login
 
 ## Tests
 
