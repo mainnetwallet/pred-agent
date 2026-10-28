@@ -15,18 +15,23 @@ Phase 8 additions:
 from __future__ import annotations
 
 import logging
+import threading
 from dataclasses import asdict, is_dataclass
 from datetime import datetime, timezone
-from decimal import Decimal
+from decimal import ROUND_DOWN, Decimal
 from enum import Enum
 from typing import TYPE_CHECKING, Any
 
 from pred_agent.config import Settings
+from pred_agent.execution.live_executor import LiveOrderIntent
+from pred_agent.execution.live_runtime import LiveRuntime, MarketContext, MarketLookup
 from pred_agent.execution.paper_executor import PaperExecutor
+from pred_agent.execution.state_machine import OrderState
 from pred_agent.positions import Position, PositionManager
 from pred_agent.proposals import Proposal, ProposalService, ProposalStatus
 from pred_agent.rules import Rule, RulesService
 from pred_agent.store.repository import OrderRepo, PositionRepo, ProposalRepo, RuleRepo
+from pred_agent.util.decimals import order_amount_usd, quantity_for_amount
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session, sessionmaker
@@ -61,11 +66,18 @@ class AgentController:
             ttl_seconds=settings.proposal_ttl_seconds,
             db=ProposalRepo(db_session_factory) if db_session_factory else None,
         )
-        # LiveExecutor is not wired into this controller yet (no transport / contract
-        # address / fee lookup / reconcile). Until it is, LIVE approvals fail closed
-        # instead of marking a proposal APPROVED without ever placing an order.
+        # LIVE approvals fail closed until ``arm_live`` succeeds (credentials, Safe address,
+        # account readiness, startup reconcile). Nothing here can switch the mode itself.
         self.live_execution_ready = False
-        self.executor = PaperExecutor(
+        self.live: LiveRuntime | None = None
+        self.live_not_ready_reason: str | None = "live runtime not armed yet"
+        self.market_lookup: MarketLookup | None = None
+        # Why the last approve()/propose call returned None (shown to the operator).
+        self.last_error: str | None = None
+        self._live_lock = threading.Lock()  # one live approval at a time (no double placement)
+        self.live_sync_error: str | None = None  # last failed exchange sync (blocks new LIVE orders)
+        self.live_last_sync: dict[str, Any] | None = None
+        self.executor: Any = PaperExecutor(
             db=OrderRepo(db_session_factory) if db_session_factory else None
         )
         self.positions = PositionManager(
@@ -113,7 +125,15 @@ class AgentController:
     def status(self) -> dict[str, Any]:
         exposure = sum((p.cost_usd for p in self.positions.list_positions()), Decimal("0"))
         active_rules = len(self.rules.list_active())
+        live_info: dict[str, Any] = {}
+        if self.mode == "LIVE":
+            live_info = {
+                "live_ready": self.live_execution_ready,
+                "live_note": (self.live_not_ready_reason if not self.live_execution_ready
+                          else self.live_sync_error),
+            }
         return {
+            **live_info,
             "mode": self.mode,
             "auth_mode": "jwt" if self.settings.pred_api_key else "clob",
             "feeds_ok": self.feeds_ok,
@@ -142,13 +162,85 @@ class AgentController:
         for prop in list(self.proposals.list_pending()):
             if self.proposals.reject(prop.id, via="panic"):
                 rejected += 1
-        cancelled = sum(1 for o in self.executor.list_orders() if self.executor.cancel(o.id))
+        live_failed = 0
+        if self.live is not None:
+            res = self.live.cancel_everything()
+            cancelled = res["cancelled"]
+            live_failed = res["failed"]
+        else:
+            cancelled = sum(1 for o in self.executor.list_orders() if self.executor.cancel(o.id))
         rules_cancelled = self.rules.cancel_all()
-        return {
+        out = {
             "proposals_rejected": rejected,
             "orders_cancelled": cancelled,
             "rules_cancelled": rules_cancelled,
         }
+        if self.live is not None:
+            out["live_cancel_failed"] = live_failed
+        return out
+
+    # ── live arming ───────────────────────────────────────────
+
+    def arm_live(self, runtime: LiveRuntime) -> None:
+        """Called once ``setup_live`` succeeded. Orders/cancels now go to the live runtime."""
+        self.live = runtime
+        self.executor = runtime
+        self.live_execution_ready = True
+        self.live_not_ready_reason = None
+
+    def sync_live(self) -> dict[str, Any] | None:
+        """Pull fills/open orders/positions from PRED and mirror them locally. Never raises.
+
+        PRED is the source of truth: positions are upserted from its report (quantity and
+        average price), never invented from our own bookkeeping. A failed sync blocks NEW live
+        orders (fail closed) until the next successful pass.
+        """
+        rt = self.live
+        if rt is None:
+            return None
+        with self._live_lock:
+            try:
+                report = rt.executor.sync()
+                remote = rt.executor.fetch_positions()
+            except Exception as exc:  # noqa: BLE001
+                self.live_sync_error = f"{type(exc).__name__}: {exc}"[:200]
+                log.error("live sync failed: %s", self.live_sync_error)
+                return None
+            seen = set()
+            for pos in remote:
+                seen.add(pos["market_id"])
+                self.positions.open_position(
+                    market_id=pos["market_id"],
+                    parent_id=self._fixture_for(pos["market_id"]) or pos["parent_market_id"],
+                    side=pos["side"], quantity=pos["quantity"],
+                    avg_price_cents=pos["avg_price_cents"], cost_usd=pos["cost_usd"],
+                )
+            missing = [p.market_id for p in self.positions.list_positions() if p.market_id not in seen]
+            if missing:
+                # Closed/settled/exited on the exchange: realized PnL is unknown here, so we only
+                # report it instead of booking a made-up number.
+                log.warning("positions missing on exchange (not auto-closed): %s", missing)
+            self.live_sync_error = None
+            self.live_last_sync = {**report, "positions": len(remote), "missing_on_exchange": missing}
+            return self.live_last_sync
+
+    def _fee_target_bps(self, market_id: str) -> Decimal:
+        """Discovery fee target for DISPLAY estimates only; orders never use this (they sign the
+        exact recomputed rate and refuse when discovery has no fee). 250 only when unknown."""
+        ctx = self.market_lookup(market_id) if self.market_lookup else None
+        if ctx is not None and ctx.fee_target_bps is not None:
+            return Decimal(ctx.fee_target_bps)
+        return Decimal(250)
+
+    def _fixture_for(self, market_id: str) -> str | None:
+        existing = self.positions.get_position(market_id)
+        return existing.parent_id if existing else None
+
+    def disarm_live(self, reason: str) -> None:
+        """Setup failed or was lost: LIVE approvals fail closed with this reason."""
+        self.live_execution_ready = False
+        self.live_not_ready_reason = reason
+        log.error("live execution NOT ready: %s", reason)
 
     # ── proposals ─────────────────────────────────────────────
 
@@ -160,14 +252,17 @@ class AgentController:
         return sorted(items, key=lambda p: p.created_at, reverse=True)
 
     def approve(self, proposal_id: str, via: str, amount: Decimal | None = None) -> Proposal | None:
+        self.last_error = None
         if self.paused:
+            self.last_error = "agent is paused"
             return None
         cap = Decimal(str(self.limits["max_trade_usd"]))
         if amount is not None and (amount <= 0 or amount > cap):
+            self.last_error = f"amount must be > 0 and <= {cap}"
             return None
-        if self.mode == "LIVE" and not self.live_execution_ready:
-            log.error("approve blocked: LIVE_TRADING=true but live execution is not wired")
-            return None
+        if self.mode == "LIVE":
+            with self._live_lock:
+                return self._approve_live(proposal_id, via, amount)
         prop = self.proposals.approve(proposal_id, via=via, new_amount_usd=amount)
         if prop is None:
             return None
@@ -185,6 +280,145 @@ class AgentController:
                 cost_usd=prop.amount_usd,
             )
         return prop
+
+    def _fail(self, message: str) -> Proposal | None:
+        """Record why a LIVE approval was refused. Always returns None."""
+        self.last_error = message
+        log.warning("live approve refused: %s", message)
+        return None
+
+    @staticmethod
+    def _is_exit(prop: Proposal) -> bool:
+        return any(r.startswith("exit requested via") for r in prop.reasons)
+
+    @staticmethod
+    def _is_manual(prop: Proposal) -> bool:
+        """Human-chosen trades (chat/app) skip the strategy edge gate; everything else applies."""
+        return any(r.startswith(("requested via", "exit requested via")) for r in prop.reasons)
+
+    def _approve_live(  # noqa: PLR0911, PLR0912, PLR0915
+        self, proposal_id: str, via: str, amount: Decimal | None
+    ) -> Proposal | None:
+        """Place a REAL order for a pending proposal. Every refusal sets ``last_error``."""
+        self.last_error = None
+        rt = self.live
+        if not self.live_execution_ready or rt is None:
+            return self._fail(f"live execution not ready: {self.live_not_ready_reason or 'not armed'}")
+        if self.live_sync_error:
+            return self._fail(f"exchange sync failing, refusing new orders: {self.live_sync_error}")
+        prop = self.proposals.get(proposal_id)
+        if prop is None:
+            return self._fail("proposal not found")
+        if prop.is_expired():
+            self.proposals.expire_stale()
+            return self._fail("proposal expired")
+        if prop.status != ProposalStatus.PROPOSED:
+            return self._fail(f"proposal already {prop.status.value}")
+        if prop.mode != "LIVE" or prop.advisory:
+            return self._fail("only non-advisory LIVE proposals can be traded")
+        ctx: MarketContext | None = self.market_lookup(prop.market_id) if self.market_lookup else None
+        if ctx is None:
+            return self._fail("market not found in the latest discovery scan")
+        if not ctx.contract_address:
+            return self._fail("discovery has no contract_address for this parent")
+        if ctx.fee_target_bps is None:
+            return self._fail("discovery has no fee_rate_bps for this parent; refusing to assume fee-free")
+
+        is_exit = self._is_exit(prop)
+        cap = Decimal(str(self.limits["max_trade_usd"]))
+        try:
+            if is_exit:
+                pos = self.positions.get_position(prop.market_id)
+                if pos is None or pos.status != "open":
+                    return self._fail(f"no open position for market {prop.market_id}")
+                qty = pos.quantity.quantize(Decimal("0.001"), rounding=ROUND_DOWN)
+            else:
+                budget = amount if amount is not None else prop.amount_usd
+                qty = quantity_for_amount(prop.side, prop.price_cents, budget)
+            amount_exact = order_amount_usd(prop.side, prop.price_cents, qty)
+        except (ValueError, ArithmeticError) as exc:
+            return self._fail(f"cannot size order: {exc}")
+
+        if not is_exit:
+            if amount_exact > cap:
+                return self._fail(f"order notional {amount_exact} exceeds max_trade_usd {cap}")
+            max_pos = int(self.limits["max_open_positions"])
+            if len(self.positions.list_positions()) >= max_pos:
+                return self._fail(f"max_open_positions ({max_pos}) reached")
+            loss_cap = Decimal(str(self.limits["daily_loss_usd"]))
+            if self.positions.daily_pnl() <= -loss_cap:
+                return self._fail(f"daily loss limit ({loss_cap}) reached")
+
+        intent = LiveOrderIntent(
+            market_id=prop.market_id,
+            parent_market_id=ctx.parent_market_id,
+            contract_address=ctx.contract_address,
+            side=prop.side,
+            price_cents=prop.price_cents,
+            quantity=qty,
+            amount_usd=amount_exact,
+            order_type=prop.order_type,
+            fee_rate_bps=0,  # recomputed from fee_target_bps
+            fee_target_bps=ctx.fee_target_bps,
+            reduce_only=is_exit,
+            p_fair=prop.p_fair,
+            min_edge_pp=None if self._is_manual(prop) else Decimal(str(self.settings.min_edge_pp)),
+        )
+        # Side-effect-free check first: a refusal leaves the proposal PROPOSED (retry/reject).
+        reason = rt.executor.precheck(intent)
+        if reason is not None:
+            return self._fail(reason)
+
+        # Persist the decision BEFORE the side effect.
+        approved = self.proposals.approve(proposal_id, via=via, new_amount_usd=amount_exact)
+        if approved is None:
+            return self._fail("proposal could not be approved (expired or already decided)")
+        approved.quantity = qty
+        self.proposals._persist(approved)  # noqa: SLF001
+
+        order = rt.executor.place_from_proposal(proposal_id=proposal_id, intent=intent)
+        if order is None:
+            self._abort(approved, rt.executor.last_abort_reason or "aborted before sending")
+            return None
+        if order.state == OrderState.FAILED:
+            self._abort(approved, f"PRED rejected the order: {order.raw_response}")
+            return None
+        if order.state == OrderState.UNKNOWN:
+            self.last_error = (
+                "order outcome UNKNOWN (market blocked). Do NOT re-approve; check open orders/portfolio."
+            )
+            log.error("live order UNKNOWN id=%s", order.id)
+            return approved
+        self._record_live_fill(approved, order, ctx, is_exit=is_exit)
+        return approved
+
+    def _abort(self, prop: Proposal, reason: str) -> None:
+        prop.status = ProposalStatus.ABORTED
+        prop.reasons = [*prop.reasons, f"aborted: {reason}"]
+        self.proposals._persist(prop)  # noqa: SLF001
+        self._fail(reason)
+
+    def _record_live_fill(
+        self, prop: Proposal, order: Any, ctx: MarketContext, *, is_exit: bool
+    ) -> None:
+        """Mirror immediate fills into the position book. Resting orders have no fill yet."""
+        filled = Decimal(str(order.filled_qty or "0"))
+        if filled <= 0:
+            return
+        if is_exit:
+            pos = self.positions.get_position(prop.market_id)
+            if pos is not None and order.state == OrderState.FILLED:
+                pnl = self.rules.compute_pnl(
+                    position=pos, current_price_cents=prop.price_cents,
+                    fee_rate_bps=ctx.fee_target_bps or 0,
+                )
+                self.positions.close_position(prop.market_id, realized_pnl_usd=pnl["profit_usd"])
+            return
+        self.positions.open_position(
+            market_id=prop.market_id, parent_id=prop.fixture_id, side=prop.side,
+            quantity=filled, avg_price_cents=prop.price_cents,
+            cost_usd=order_amount_usd(prop.side, prop.price_cents, filled),
+        )
 
     def reject(self, proposal_id: str, via: str) -> Proposal | None:
         return self.proposals.reject(proposal_id, via=via)
@@ -213,7 +447,7 @@ class AgentController:
         if price_cents <= 0:
             return None, "no live price for this market — book unavailable"
         qty = amount_usd / (price_cents / 100)
-        est_fee = amount_usd * Decimal(250) / Decimal(10000)
+        est_fee = amount_usd * self._fee_target_bps(market_id) / Decimal(10000)
         prop = self.proposals.create(
             mode=self.mode, advisory=False, fixture_id=fixture_id, market_id=market_id,
             side=side, order_type="limit", price_cents=price_cents, quantity=qty,
@@ -233,7 +467,7 @@ class AgentController:
             return None, f"no open position for market {market_id}"
         exit_side = "short" if pos.side == "long" else "long"
         price = pos.avg_price_cents
-        est_fee = pos.cost_usd * Decimal(250) / Decimal(10000)
+        est_fee = pos.cost_usd * self._fee_target_bps(market_id) / Decimal(10000)
         prop = self.proposals.create(
             mode=self.mode, advisory=False, fixture_id=pos.parent_id, market_id=market_id,
             side=exit_side, order_type="limit", price_cents=price, quantity=pos.quantity,

@@ -31,6 +31,7 @@ from pred_agent.control_api.auth import DeviceAuth
 from pred_agent.control_api.controller import AgentController, to_jsonable
 from pred_agent.control_api.session import LoginManager
 from pred_agent.events import Event, EventBus
+from pred_agent.execution.live_runtime import MarketContext
 from pred_agent.llm import LLMRequest, OpenAICompatClient, build_llm_client
 from pred_agent.llm.chat import ChatMessage, build_chat_llm
 from pred_agent.realtime import BookFeed
@@ -223,9 +224,33 @@ class FixtureCache:
 
     def __init__(self) -> None:
         self._fixtures: list[DiscoveredParent] = []
+        self._updated_at: float | None = None
 
     def update(self, fixtures: list[DiscoveredParent]) -> None:
         self._fixtures = list(fixtures)
+        self._updated_at = time.monotonic()
+
+    def market_context(self, market_id: str) -> MarketContext | None:
+        """Discovery facts for one child market (parent id, contract, fee target, status)."""
+        if self._updated_at is None:
+            return None
+        for f in self._fixtures:
+            for m in f.markets or []:
+                if m.get("market_id") != market_id:
+                    continue
+                active = f.status == "active" and m.get("status") == "active"
+                return MarketContext(
+                    market_id=market_id,
+                    parent_market_id=f.parent_market_id,
+                    contract_address=f.contract_address,
+                    fee_target_bps=f.fee_rate_bps,
+                    active=active,
+                    inactive_reason=None if active else (
+                        f"market not active (parent={f.status}, child={m.get('status')})"
+                    ),
+                    age_s=time.monotonic() - self._updated_at,
+                )
+        return None
 
     def list(self, state: str | None = None) -> list[dict[str, Any]]:
         result = []
@@ -301,6 +326,7 @@ def create_app(*, background: bool = False) -> FastAPI:  # noqa: PLR0915
     chat_sessions = ChatSessionStore(db=ChatRepo(session_factory))
     chat_rl = ChatRateLimiter(max_per_window=10, window_s=60)
     fixture_cache = FixtureCache()
+    controller.market_lookup = fixture_cache.market_context
 
     app = FastAPI(title="PRED Control API")
     app.state.settings = settings
@@ -350,6 +376,54 @@ def create_app(*, background: bool = False) -> FastAPI:  # noqa: PLR0915
 
         bg_task: asyncio.Task[Any] | None = None
         stop_ev: asyncio.Event | None = None
+        live_task: asyncio.Task[Any] | None = None
+
+        async def _arm_live_loop() -> None:
+            """Arm LIVE trading (retrying) — until armed, LIVE approvals fail closed."""
+            from pred_agent.execution.live_runtime import LiveSetupError, setup_live
+
+            transport = getattr(app.state.book_feed, "transport", None)
+            while True:
+                try:
+                    runtime = await asyncio.to_thread(
+                        setup_live,
+                        settings=settings,
+                        transport=transport,
+                        market_lookup=fixture_cache.market_context,
+                        max_discovery_age_s=float(settings.scan_interval_seconds * 3 + 30),
+                    )
+                    controller.arm_live(runtime)
+                    await _alert(
+                        "🔴 LIVE trading ARMED — approvals now place REAL orders. "
+                        f"Exchange open orders: {runtime.startup_report['exchange_open_orders']}, "
+                        f"unresolved: {len(runtime.startup_report['unresolved'])}."
+                    )
+                    break
+                except LiveSetupError as exc:
+                    controller.disarm_live(str(exc))
+                except Exception as exc:  # noqa: BLE001
+                    controller.disarm_live(f"unexpected setup failure: {type(exc).__name__}")
+                await asyncio.sleep(60)
+            # Armed: keep mirroring fills / open orders / positions from PRED.
+            last_unresolved = 0
+            alerted_error: str | None = None
+            while True:
+                await asyncio.sleep(30)
+                report = await asyncio.to_thread(controller.sync_live)
+                if report is None:
+                    err = controller.live_sync_error
+                    if err and err != alerted_error:  # alert on change, not every 30 s
+                        alerted_error = err
+                        await _alert(f"⚠️ LIVE sync failing — new orders blocked: {err}")
+                    continue
+                alerted_error = None
+                unresolved = len(report.get("unresolved", []))
+                if unresolved > last_unresolved:
+                    await _alert(f"⚠️ {unresolved} LIVE order(s) UNKNOWN — markets blocked until reconciled.")
+                last_unresolved = unresolved
+
+        if background and settings.live_trading:
+            live_task = asyncio.create_task(_arm_live_loop())
         if background:
             from pred_agent.control_api.background import run_background_tasks
             from pred_agent.scanner import Scanner
@@ -369,6 +443,8 @@ def create_app(*, background: bool = False) -> FastAPI:  # noqa: PLR0915
             yield
         finally:
             bus_task.cancel()
+            if live_task is not None:
+                live_task.cancel()
             if bg_task is not None and stop_ev is not None:
                 stop_ev.set()
                 bg_task.cancel()
@@ -893,11 +969,13 @@ def create_app(*, background: bool = False) -> FastAPI:  # noqa: PLR0915
                 amount = Decimal(str(raw))
             except InvalidOperation:
                 return error_response("bad_amount", "amount_usd must be a decimal string", 400)
-        prop = controller.approve(proposal_id, via="app", amount=amount)
+        # Blocking HTTP (book fetch + order placement) must not stall the event loop.
+        prop = await asyncio.to_thread(controller.approve, proposal_id, "app", amount)
         if prop is None:
             return error_response(
                 "not_approvable",
-                "proposal missing/expired, agent paused, or amount outside limits",
+                controller.last_error
+                or "proposal missing/expired, agent paused, or amount outside limits",
                 409,
             )
         await bus.publish(Event("proposal_updated", to_jsonable(prop)))

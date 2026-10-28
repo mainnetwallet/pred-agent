@@ -48,10 +48,46 @@ def test_live_panic_requires_xconfirm(monkeypatch):
     assert app.state.controller.paused is True
 
 
+def _arm_fake_live(controller):
+    from pred_agent.control_api.controller import AgentController  # noqa: F401
+    from pred_agent.execution.live_runtime import MarketContext
+    from pred_agent.execution.state_machine import OrderRecord, OrderState
+
+    class _Exec:
+        last_abort_reason = None
+
+        def precheck(self, intent):
+            return None
+
+        def place_from_proposal(self, *, proposal_id, intent):
+            return OrderRecord(
+                id="live-1", pred_order_id="o1", proposal_id=proposal_id, state=OrderState.OPEN,
+                side=intent.side, price_cents=520000, quantity=str(intent.quantity),
+            )
+
+    class _Runtime:
+        executor = _Exec()
+
+        def list_orders(self):
+            return []
+
+        def cancel(self, order_id):
+            return False
+
+        def cancel_everything(self):
+            return {"cancelled": 0, "failed": 0, "parents": 0}
+
+    controller.market_lookup = lambda mid: MarketContext(
+        market_id=mid, parent_market_id="0x" + "cd" * 32, contract_address="0x" + "ee" * 20,
+        fee_target_bps=250, active=True, inactive_reason=None, age_s=1.0,
+    )
+    controller.arm_live(_Runtime())
+
+
 def test_live_approve_requires_xconfirm(monkeypatch):
     app = _live_app(monkeypatch)
-    # This test covers the X-Confirm gate only; simulate a wired live executor.
-    app.state.controller.live_execution_ready = True
+    # This test covers the X-Confirm gate only; arm the controller with a fake live runtime.
+    _arm_fake_live(app.state.controller)
     client = TestClient(app)
     headers = _authed(client)
     prop = app.state.controller.proposals.create(

@@ -53,6 +53,35 @@ def quantity_to_shares(quantity_scaled: int) -> Decimal:
     return Decimal(quantity_scaled) / Decimal(1_000_000)
 
 
+def order_amount_usd(side: str, price_cents: Decimal, quantity: Decimal) -> Decimal:
+    """Side-aware notional, exactly as the Orders docs define it (no rounding).
+
+    long:  amount = price * quantity / 100
+    short: amount = (100 - price) * quantity / 100
+    """
+    if side == "long":
+        return (price_cents * quantity) / Decimal(100)
+    if side == "short":
+        return ((Decimal(100) - price_cents) * quantity) / Decimal(100)
+    raise ValueError(f"side must be long or short, got {side!r}")
+
+
+def quantity_for_amount(side: str, price_cents: Decimal, amount_usd: Decimal) -> Decimal:
+    """Largest quantity (3 decimals, rounded DOWN) whose notional does not exceed amount_usd."""
+    unit = price_cents if side == "long" else Decimal(100) - price_cents
+    if unit <= 0:
+        raise ValueError(f"price out of range for {side}: {price_cents}")
+    return ((amount_usd * Decimal(100)) / unit).quantize(
+        Decimal(10) ** -MAX_QTY_DECIMALS, rounding=ROUND_DOWN
+    )
+
+
+def plain_decimal(value: Decimal) -> str:
+    """Decimal -> plain string (never scientific notation, no trailing zeros)."""
+    text = format(value.normalize(), "f")
+    return text if text != "-0" else "0"
+
+
 def validate_quantity(shares: Decimal) -> None:
     """Enforce max 3 decimals on quantity."""
     exponent = shares.as_tuple().exponent

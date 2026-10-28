@@ -6,6 +6,7 @@ from decimal import Decimal
 
 import pytest
 
+from pred_agent.book import BookLevel, BookSnapshot
 from pred_agent.execution import (
     LiveExecutor,
     LiveOrderIntent,
@@ -14,6 +15,18 @@ from pred_agent.execution import (
     OrderStateMachine,
 )
 from pred_agent.execution.state_machine import LEGAL_TRANSITIONS
+
+
+def _book(bid: str = "50", ask: str = "52", qty: str = "100") -> BookSnapshot:
+    """Healthy two-sided book used by the live-executor tests."""
+    return BookSnapshot(
+        market_id="m", bids=[BookLevel(Decimal(bid), Decimal(qty))],
+        asks=[BookLevel(Decimal(ask), Decimal(qty))], ltp=None, spread_cents=None,
+        mid_price_cents=None, last_updated_at=None, sequence_number=None,
+    )
+
+
+_OK_ENV = {"book_provider": lambda parent, market: _book(), "market_check": lambda market: None}
 
 
 class MockTransport:
@@ -172,6 +185,7 @@ def test_live_executor_place_success(monkeypatch):
         eoa_address="0x" + "11" * 20,
         signer_private_key="0x" + "22" * 32,
         proxy_address="0x" + "33" * 20,
+        **_OK_ENV,
     )
 
     intent = LiveOrderIntent(
@@ -183,7 +197,8 @@ def test_live_executor_place_success(monkeypatch):
         quantity=Decimal("3.8"),
         amount_usd=Decimal("1.98"),
         order_type="ioc",
-        fee_rate_bps=125,
+        fee_rate_bps=0,
+        fee_target_bps=250,
     )
     order = exec_.place_from_proposal(proposal_id="p1", intent=intent)
 
@@ -214,6 +229,7 @@ def test_live_executor_place_error_unknown(monkeypatch):
         eoa_address="0x" + "11" * 20,
         signer_private_key="0x" + "22" * 32,
         proxy_address="0x" + "33" * 20,
+        **_OK_ENV,
     )
 
     intent = LiveOrderIntent(
@@ -225,7 +241,8 @@ def test_live_executor_place_error_unknown(monkeypatch):
         quantity=Decimal("3.8"),
         amount_usd=Decimal("1.98"),
         order_type="ioc",
-        fee_rate_bps=125,
+        fee_rate_bps=0,
+        fee_target_bps=250,
     )
     order = exec_.place_from_proposal(proposal_id="p1", intent=intent)
 

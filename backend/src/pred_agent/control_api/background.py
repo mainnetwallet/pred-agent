@@ -199,6 +199,16 @@ class RulesMonitor:
                     await self._publish(bus, "rule_updated", {"rule_id": rule.id, "status": "EXPIRED"})
                 continue
 
+            if controller.mode == "LIVE":
+                # Rules fire through the paper executor, which must never "close" a real
+                # position. Automated live exits are not enabled: fail closed and say so.
+                if controller.rules.mark_blocked(
+                    rule, "LIVE mode: automated exits are not enabled; close the position manually"
+                ):
+                    stats["blocked"] += 1
+                    await self._on_blocked(rule, bus, alert_fn)
+                continue
+
             snapshot = await self._fresh_snapshot(
                 book_feed=book_feed,
                 market_id=rule.market_id,

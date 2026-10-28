@@ -7,6 +7,7 @@ ignored. If either is missing the bot does not start (fail closed).
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from decimal import Decimal, InvalidOperation
 from typing import Any
@@ -133,8 +134,8 @@ def build_application(settings: Settings, controller: AgentController) -> BotApp
             except InvalidOperation:
                 await reply(update, "Bad amount.")
                 return
-        prop = controller.approve(pid, via="telegram", amount=amount)
-        await reply(update, "Approved." if prop else "Could not approve (paused, expired, or amount outside limits).")
+        prop = await asyncio.to_thread(controller.approve, pid, "telegram", amount)
+        await reply(update, _approve_text(controller, prop))
 
     async def cmd_reject(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         args = ctx.args or []
@@ -157,7 +158,7 @@ def build_application(settings: Settings, controller: AgentController) -> BotApp
             else:
                 text = "Panic cancelled."
         elif action == "ok":
-            text = "Approved." if controller.approve(arg, via="telegram") else "Could not approve (paused, expired, or already decided)."
+            text = _approve_text(controller, await asyncio.to_thread(controller.approve, arg, "telegram", None))
         elif action == "no":
             text = "Rejected." if controller.reject(arg, via="telegram") else "Already decided."
         else:
@@ -220,3 +221,11 @@ async def send_alert(app: BotApp | None, settings: Settings, text: str) -> None:
         await app.bot.send_message(chat_id=chat_id, text=text)
     except Exception:
         log.exception("telegram alert failed")
+
+
+def _approve_text(controller: Any, prop: Any) -> str:
+    """Operator-facing result of an approval. LIVE refusals/warnings come from last_error."""
+    err = getattr(controller, "last_error", None)
+    if prop is None:
+        return f"NOT placed: {err}" if err else "Could not approve (paused, expired, or amount outside limits)."
+    return f"Approved. WARNING: {err}" if err else "Approved."
