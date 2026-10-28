@@ -505,3 +505,47 @@ def test_controller_sync_mirrors_positions_and_blocks_on_failure(monkeypatch):
     prop = _proposal(ctl)
     assert ctl.approve(prop.id, "app") is None and "sync" in (ctl.last_error or "")
     assert prop.status == ProposalStatus.PROPOSED
+
+
+# ── docs conformance: open-orders pagination / omitted empty list / settlement rows ──
+
+
+class _PagedTransport(FakeTransport):
+    def __init__(self, pages: list[dict]) -> None:
+        super().__init__()
+        self._pages = list(pages)
+        self.params_seen: list[dict | None] = []
+
+    def get(self, path: str, params: dict | None = None) -> dict:
+        self.calls.append(("GET", path, None))
+        self.params_seen.append(params)
+        return dict(self._pages.pop(0))
+
+
+def test_reconcile_reads_all_open_order_pages(monkeypatch):
+    row = lambda i: {"order_id": f"ord_{i}", "market_id": MARKET, "parent_market_id": PARENT,  # noqa: E731
+                     "side": "long", "price": "50", "quantity": "1", "remaining_quantity": "1"}
+    t = _PagedTransport([
+        {"success": True, "orders": [row(1)], "pagination": {"has_more": True, "limit": 1, "offset": 0}},
+        {"success": True, "orders": [row(2)], "pagination": {"has_more": False, "limit": 1, "offset": 1}},
+    ])
+    ex = _executor(monkeypatch, t)
+    report = ex.reconcile_startup()
+    assert report["exchange_open_orders"] == 2
+    assert [p["offset"] for p in t.params_seen] == [0, 1]
+
+
+def test_reconcile_accepts_omitted_empty_orders(monkeypatch):
+    t = _PagedTransport([{"success": True, "pagination": {"has_more": False, "limit": 50, "offset": 0}}])
+    ex = _executor(monkeypatch, t)
+    assert ex.reconcile_startup()["exchange_open_orders"] == 0
+
+
+def test_reconcile_fails_closed_on_success_false(monkeypatch):
+    import pytest
+
+    from pred_agent.execution.live_executor import ReconcileError
+
+    t = _PagedTransport([{"success": False, "error": "boom", "pagination": {"has_more": False}}])
+    with pytest.raises(ReconcileError):
+        _executor(monkeypatch, t).reconcile_startup()

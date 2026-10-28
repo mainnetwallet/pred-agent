@@ -26,6 +26,7 @@ from typing import Any
 from fastapi import FastAPI, Header, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 
+from pred_agent.book import BookAnalyzer
 from pred_agent.config import load_settings
 from pred_agent.control_api.auth import DeviceAuth
 from pred_agent.control_api.controller import AgentController, to_jsonable
@@ -536,7 +537,27 @@ def create_app(*, background: bool = False) -> FastAPI:  # noqa: PLR0915
                 return {"error": "book feed is not running"}
             snap = bf.get_book(market_id)
             if snap is None:
-                return {"error": f"no book data for market {market_id}"}
+                # Cache miss: fetch once over REST instead of failing (the rules
+                # monitor already does this). Parent comes from the feed's
+                # tracking table, else from the fixture cache.
+                parent = getattr(bf, "parent_of", lambda _m: None)(market_id)
+                if parent is None:
+                    found = _find_market(market_id)
+                    if found is not None:
+                        parent = found["fixture"].get("parent_market_id")
+                fetch = getattr(bf, "fetch_book_rest", None)
+                if parent and fetch is not None:
+                    snap = await fetch(parent, market_id)
+                if snap is None:
+                    return {
+                        "error": f"no book data for market {market_id}",
+                        "detail": (
+                            "REST orderbook fetch failed or returned nothing"
+                            if parent
+                            else "market is not in the fixture cache (unknown parent market)"
+                        ),
+                    }
+            snap = BookAnalyzer().analyze(snap)
             return {
                 "market_id": market_id,
                 "best_bid_cents": str(snap.bids[0].price_cents) if snap.bids else None,

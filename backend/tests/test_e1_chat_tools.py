@@ -307,3 +307,42 @@ def test_cancel_order_tool_rejects_unknown_order():
     data, cards = _run(app.state.chat_tool_fns["cancel_order"], order_id="nope")
     assert "error" in data
     assert cards == []
+
+
+# ---------------------------------------------------------------------------
+# get_book: REST fallback on cache miss, spread/mid computed
+# ---------------------------------------------------------------------------
+
+class _FetchingBookFeed(_FakeBookFeed):
+    def __init__(self, fetched: BookSnapshot | None) -> None:
+        super().__init__({})
+        self._fetched = fetched
+        self.calls: list[tuple[str, str]] = []
+
+    def parent_of(self, market_id: str) -> str | None:
+        return "0xparent"
+
+    async def fetch_book_rest(self, parent: str, market_id: str) -> BookSnapshot | None:
+        self.calls.append((parent, market_id))
+        return self._fetched
+
+
+def test_get_book_falls_back_to_rest_and_computes_spread():
+    app = create_app()
+    raw = _snapshot("0xm1", "40", "44")
+    raw = BookSnapshot(**{**raw.__dict__, "spread_cents": None, "mid_price_cents": None})
+    feed = _FetchingBookFeed(raw)
+    app.state.book_feed = feed
+    out = asyncio.run(app.state.chat_tool_fns["get_book"](market_id="0xm1"))
+    assert feed.calls == [("0xparent", "0xm1")]
+    assert out["best_bid_cents"] == "40"
+    assert out["spread_cents"] == "4"
+    assert out["mid_price_cents"] == "42"
+
+
+def test_get_book_reports_detail_when_rest_fails():
+    app = create_app()
+    app.state.book_feed = _FetchingBookFeed(None)
+    out = asyncio.run(app.state.chat_tool_fns["get_book"](market_id="0xm1"))
+    assert out["error"] == "no book data for market 0xm1"
+    assert "REST" in out["detail"]
