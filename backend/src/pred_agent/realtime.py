@@ -43,6 +43,8 @@ class BookFeed:
         self._poll_interval = settings.scan_interval_seconds
         self._tracked_markets: set[str] = set()
         self._parents: dict[str, str] = {}
+        # market_id -> last REST orderbook failure ("HTTP 503: {...}"), so tools can say WHY.
+        self._last_fetch_error: dict[str, str] = {}
         self._running = False
 
     # ------------------------------------------------------------------ #
@@ -77,6 +79,10 @@ class BookFeed:
     def parent_of(self, market_id: str) -> str | None:
         return self._parents.get(market_id)
 
+    def last_fetch_error(self, market_id: str) -> str | None:
+        """Why the last REST book fetch for this market failed (None if it did not)."""
+        return self._last_fetch_error.get(market_id)
+
     # ------------------------------------------------------------------ #
     # REST book fetch (used by both modes)
     # ------------------------------------------------------------------ #
@@ -86,7 +92,8 @@ class BookFeed:
         path = f"/api/v1/order/{parent_market_id}/orderbook/{market_id}?depth=10&include_metadata=true"
         # Try without auth
         try:
-            raw = await self._http_get_no_auth(path)
+            self._last_fetch_error.pop(market_id, None)
+            raw = await self._http_get_no_auth(path, market_id)
             if raw:
                 return self._normalize_and_cache(market_id, raw, ws_dollars=False)
         except Exception:
@@ -100,13 +107,15 @@ class BookFeed:
             logger.warning("book fetch failed for market=%s parent=%s: %s", market_id, parent_market_id, exc)
             return None
 
-    async def _http_get_no_auth(self, path: str) -> dict[str, Any] | None:
+    async def _http_get_no_auth(self, path: str, market_id: str | None = None) -> dict[str, Any] | None:
 
         settings = load_settings()
         async with httpx.AsyncClient(timeout=10.0) as client:
             resp = await client.get(f"{settings.host}{path}")
             if resp.status_code >= 400:
                 logger.warning("orderbook GET %s -> HTTP %s: %.200s", path, resp.status_code, resp.text)
+                if market_id:
+                    self._last_fetch_error[market_id] = f"HTTP {resp.status_code}: {resp.text[:120]}"
                 return None
             data: dict[str, Any] = resp.json()
             return data

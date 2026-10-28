@@ -20,6 +20,7 @@ Ekta Render web service e **website + mobile app API + Telegram bot** tinta-i ch
 | `LLM_MODEL` | model name (jemon `gpt-4o-mini`, `deepseek-chat`) — **tool-calling support dorkar** |
 | `LLM_BASE_URL` | provider er API root, jemon `https://api.openai.com/v1` ba `https://openrouter.ai/api/v1` |
 | `PRIVATE_KEY`, `PRED_API_KEY`, `BASE_RPC_URL` | agent er jonno (optional ekhon) |
+| `PRED_PARTNER_KEY` | optional. PRED-issued partner key; shudhu tokhon use hoy jokhon PRED tomar EOA ke chine na (`aggregator_key_required`). Eta notun account + notun Safe banay |
 
 > **Note:** `DATABASE_URL` is injected automatically by the Blueprint via `fromDatabase`. Do NOT set it manually.
 

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import logging
 import time
 from base64 import urlsafe_b64decode, urlsafe_b64encode
 from dataclasses import dataclass
@@ -19,6 +20,8 @@ from dataclasses import dataclass
 import httpx
 
 from ..signer.eip712 import sign_clob_auth
+
+log = logging.getLogger(__name__)
 
 
 @dataclass
@@ -80,14 +83,32 @@ class ClobAuth:
         on the PRED site has none yet. Existing eligible users create them with L1 and a nonce,
         without a partner key and without consuming account quota. So: derive first, and if
         PRED rejects it (4xx), create with nonce ``nonce`` WITHOUT the partner key, so this
-        can never create a brand-new account.
+        cannot create a brand-new account. Only when ``aggregator_api_key`` (PRED_PARTNER_KEY) is
+        explicitly configured AND PRED answers ``aggregator_key_required`` is a NEW account created.
         """
         try:
             return self.derive_credentials(nonce)
         except httpx.HTTPStatusError as exc:
             if exc.response.status_code not in (400, 401, 403, 404):
                 raise
-        return self.create_credentials(nonce, send_partner_key=False)
+        try:
+            return self.create_credentials(nonce, send_partner_key=False)
+        except httpx.HTTPStatusError as exc:
+            # PRED says this EOA is not a known account. Only if the operator explicitly
+            # configured a PRED-issued partner key (PRED_PARTNER_KEY) do we create a NEW
+            # account with it. That uses one unit of PRED's lifetime account quota and gets
+            # a different Safe than any pre-existing PRED account of the same user.
+            if (
+                self._aggregator_api_key
+                and exc.response.status_code == 401
+                and "aggregator_key_required" in exc.response.text
+            ):
+                log.warning(
+                    "PRED does not know this EOA; creating a NEW CLOB account with the "
+                    "configured partner key (consumes one account-creation unit)"
+                )
+                return self.create_credentials(nonce, send_partner_key=True)
+            raise
 
     def create_credentials(self, nonce: int = 0, *, send_partner_key: bool = True) -> ClobCredentials:
         """L1: POST /clob/auth/api-key. New EOA needs aggregator API key."""

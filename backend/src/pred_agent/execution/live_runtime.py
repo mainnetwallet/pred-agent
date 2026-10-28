@@ -138,8 +138,9 @@ _AUTH_HINTS = {
     "invalid_auth": "credential revoked, account not eligible, or this EOA is not the account's primary wallet",
     "aggregator_key_required": (
         "PRED CLOB does not recognise this EOA as an existing eligible account (derive and "
-        "create-without-partner-key were both refused). Contact PRED with this EOA; a partner key "
-        "would only create a NEW empty account with a different Safe"
+        "create-without-partner-key were both refused). Check that PRIVATE_KEY is the primary wallet "
+        "of your PRED account; a PRED-issued PRED_PARTNER_KEY would only create a NEW empty account "
+        "with a different Safe"
     ),
     "nonce_already_used": "credentials already issued for nonce 0; derive with fresh L1 headers",
 }

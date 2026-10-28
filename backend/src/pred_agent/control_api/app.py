@@ -413,8 +413,9 @@ def create_app(*, background: bool = False) -> FastAPI:  # noqa: PLR0915
                             alerted_setup = "aggregator_key_required"
                             await _alert(
                                 "⚠️ LIVE is ON but PRED has not enabled CLOB access for this wallet "
-                                "(401 aggregator_key_required). No real orders can be placed. Ask PRED "
-                                "to enable CLOB access for the EOA or issue a PRED_API_KEY; retrying "
+                                "(401 aggregator_key_required). No real orders can be placed. Check that "
+                                "PRIVATE_KEY is your PRED account's primary wallet, or set a "
+                                "PRED-issued PRED_PARTNER_KEY (creates a NEW account); retrying "
                                 f"every {int(delay // 60)}+ min."
                             )
                 except Exception as exc:  # noqa: BLE001
@@ -564,14 +565,24 @@ def create_app(*, background: bool = False) -> FastAPI:  # noqa: PLR0915
                 if parent and fetch is not None:
                     snap = await fetch(parent, market_id)
                 if snap is None:
-                    return {
+                    why = getattr(bf, "last_fetch_error", lambda _m: None)(market_id)
+                    detail = (
+                        "REST orderbook fetch failed or returned nothing"
+                        if parent
+                        else "market is not in the fixture cache (unknown parent market)"
+                    )
+                    out: dict[str, Any] = {
                         "error": f"no book data for market {market_id}",
-                        "detail": (
-                            "REST orderbook fetch failed or returned nothing"
-                            if parent
-                            else "market is not in the fixture cache (unknown parent market)"
-                        ),
+                        "detail": detail,
                     }
+                    if why:
+                        out["pred_response"] = why  # PRED's own answer, e.g. 503 market not found
+                    if parent and parent == market_id:
+                        out["note"] = (
+                            "discovery lists this market with parent_market_id == market_id; "
+                            "PRED's orderbook has no entry for that pair (market may be closed)"
+                        )
+                    return out
             snap = BookAnalyzer().analyze(snap)
             return {
                 "market_id": market_id,

@@ -41,6 +41,8 @@ services:
         sync: false
       - key: PRED_API_KEY
         sync: false
+      - key: PRED_PARTNER_KEY  # optional: PRED-issued partner key; creates a NEW CLOB account only
+        sync: false
       - key: LLM_API_KEY
         sync: false
       - key: LLM_MODEL       # e.g. gpt-4o-mini, deepseek-chat, or your provider's model id

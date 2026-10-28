@@ -161,7 +161,8 @@ def test_aggregator_key_required_hint_explains_unknown_account():
     exc = httpx.HTTPStatusError(
         "401", request=req, response=httpx.Response(401, request=req, json={"error": "aggregator_key_required"}))
     msg = describe_auth_error(exc)
-    assert "aggregator_key_required" in msg and "Contact PRED" in msg and "NEW empty account" in msg
+    assert "aggregator_key_required" in msg and "primary wallet" in msg
+    assert "PRED_PARTNER_KEY" in msg and "NEW empty account" in msg
 
 
 def test_clob_auth_failure_backs_off_instead_of_hammering_pred():
