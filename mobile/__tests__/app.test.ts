@@ -17,7 +17,7 @@ describe("Money formatting", () => {
   });
 
   test("formatUsd handles invalid input", () => {
-    expect(formatUsd("invalid")).toBe("$0.00");
+    expect(formatUsd("invalid")).toBe("—");
   });
 
   test("formatPriceCents converts cents to dollars", () => {

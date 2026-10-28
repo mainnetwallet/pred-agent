@@ -230,6 +230,19 @@ def test_cancel_sends_pred_order_id_not_local_id(monkeypatch):
     assert ex.sm.get(order.id).state == OrderState.CLOSED
 
 
+def test_cancel_noop_http_400_is_not_cancelled(monkeypatch):
+    """Docs: an active delay returns HTTP 400 + status=cancel_noop; the order is NOT cancelled."""
+    t = FakeTransport(delete=PredTransportError(
+        400, "cancel failed",
+        raw_body='{"status":"cancel_noop","order_id":"ord_1","message":"order is delayed"}'))
+    ex = _executor(monkeypatch, t)
+    order = ex.place_from_proposal(proposal_id="p", intent=_intent())
+    assert order is not None
+    result = ex.cancel(order.id, MARKET, PARENT)
+    assert result["status"] == "cancel_noop"
+    assert ex.sm.get(order.id).state == OrderState.OPEN
+
+
 def test_cancel_without_pred_id_does_not_call_exchange(monkeypatch):
     t = FakeTransport()
     ex = _executor(monkeypatch, t)

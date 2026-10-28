@@ -18,6 +18,7 @@ Fail-closed rules enforced here (see ``_revalidate_reason``):
 
 from __future__ import annotations
 
+import json
 import re
 import secrets
 from collections.abc import Callable
@@ -90,6 +91,16 @@ class LiveOrderIntent:
     # trades leave min_edge_pp as None and skip the edge gate.
     p_fair: Decimal | None = None
     min_edge_pp: Decimal | None = None
+
+
+def _json_or_none(raw: str | None) -> dict[str, Any] | None:
+    if not raw:
+        return None
+    try:
+        data = json.loads(raw)
+    except ValueError:
+        return None
+    return data if isinstance(data, dict) else None
 
 
 class LiveExecutor:
@@ -449,6 +460,13 @@ class LiveExecutor:
         try:
             resp = self.transport.delete(path, json=body)
         except PredTransportError as exc:
+            # Docs: a delayed order returns HTTP 400 cancel_noop (NOT cancelled). Keep that
+            # distinct from a generic error so callers do not assume the order is gone.
+            parsed = _json_or_none(exc.raw_body)
+            if exc.status == 400 and parsed and parsed.get("status") == "cancel_noop":
+                order.state = OrderState.OPEN
+                order.raw_response = redact(str(exc.raw_body))
+                return {"status": "cancel_noop", "order_id": order_id, "raw": parsed}
             return {"status": "error", "order_id": order_id, "error": redact(str(exc.raw_body))}
 
         status = resp.get("status", "failed")

@@ -14,6 +14,7 @@ from pred_agent.control_api.background import refresh_balance_once
 from pred_agent.execution.live_executor import LiveExecutor
 from pred_agent.transport.clob_transport import ClobTransport
 from pred_agent.transport.jwt_transport import JwtTransport
+from pred_agent.transport.protocol import PredTransportError
 
 
 def test_order_prefix_per_transport():
@@ -88,3 +89,16 @@ def test_balance_failure_stays_unavailable():
     asyncio.run(refresh_balance_once(
         controller=ctl, transport=_Tr({"success": False, "usdc_balance": "0", "error": "x"})))
     assert ctl.balance is None
+
+
+def test_balance_http_error_stays_unavailable_and_logs_pred_error(caplog):
+    """Docs: 401/500 balance replies carry success=false + error; transport raises on >=400."""
+    class _Raising:
+        def get_balance(self) -> dict[str, Any]:
+            raise PredTransportError(401, "GET failed", raw_body='{"success":false,"usdc_balance":"0","error":"invalid_l2"}')
+
+    ctl = _Ctl()
+    with caplog.at_level("WARNING"):
+        asyncio.run(refresh_balance_once(controller=ctl, transport=_Raising()))
+    assert ctl.balance is None
+    assert "HTTP 401" in caplog.text and "invalid_l2" in caplog.text

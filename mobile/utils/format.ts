@@ -4,7 +4,7 @@ import { format } from "date-fns";
 
 export function formatUsd(amount: string | number): string {
   const num = typeof amount === "string" ? parseFloat(amount) : amount;
-  if (isNaN(num)) return "$0.00";
+  if (isNaN(num)) return "—"; // never fake a zero for an unparseable amount
   return new Intl.NumberFormat("en-US", {
     style: "currency",
     currency: "USD",

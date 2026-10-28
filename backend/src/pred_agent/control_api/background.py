@@ -13,6 +13,7 @@ Grounded in ARCHITECTURE.md hard rules:
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import time
 from decimal import Decimal
@@ -30,6 +31,8 @@ from pred_agent.rules import (
     STATUS_BLOCKED,
 )
 from pred_agent.scanner import DiscoveredParent, Scanner
+from pred_agent.transport.protocol import PredTransportError
+from pred_agent.util.redaction import redact
 
 log = logging.getLogger(__name__)
 
@@ -134,6 +137,22 @@ async def scan_once(
     return results
 
 
+def _error_from_raw(raw: str | None) -> str:
+    """Best-effort error text from a PRED error body (redacted, truncated)."""
+    if not raw:
+        return ""
+    try:
+        data = json.loads(raw)
+    except ValueError:
+        return redact(raw)[:200]
+    if isinstance(data, dict):
+        err = data.get("error") or data.get("message") or ""
+        if isinstance(err, dict):
+            err = err.get("code") or err.get("message") or ""
+        return redact(str(err))[:200]
+    return redact(raw)[:200]
+
+
 async def refresh_balance_once(*, controller: AgentController, transport: Any) -> None:
     """Fetch available USDC via the transport; unavailable stays None (never faked)."""
     getter = getattr(transport, "get_balance", None)
@@ -144,7 +163,14 @@ async def refresh_balance_once(*, controller: AgentController, transport: Any) -
     if auth is not None and hasattr(auth, "derive_credentials") and getattr(auth, "credentials", "n/a") is None:
         await asyncio.to_thread(auth.sync_clock)
         await asyncio.to_thread(auth.derive_credentials, 0)
-    body = await asyncio.to_thread(getter)
+    try:
+        body = await asyncio.to_thread(getter)
+    except PredTransportError as exc:
+        # Docs: 401/500 balance replies carry success=false + error in the body, which the
+        # transport turns into an exception. Surface status and PRED's error, never a fake 0.
+        log.warning("balance unavailable: HTTP %s error=%r", exc.status, _error_from_raw(exc.raw_body))
+        controller.set_balance(None)
+        return
     if body.get("success") is True and body.get("usdc_balance") is not None:
         controller.set_balance(str(body["usdc_balance"]))
     else:
