@@ -184,6 +184,22 @@ def build_application(settings: Settings, controller: AgentController) -> BotApp
 _conflict_state: dict[str, float | None] = {"last": None}
 
 
+class _QuietConflictFilter(logging.Filter):
+    """python-telegram-bot logs ``Error while getting Updates: Conflict ...`` at ERROR level on
+    EVERY retry (before our error_callback runs). Drop just those lines; ``_polling_error`` emits
+    one rate-limited warning instead. Other updater errors pass through untouched."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        msg = record.getMessage()
+        return not ("Error while getting Updates" in msg and "Conflict" in msg)
+
+
+def _install_conflict_filter() -> None:
+    lg = logging.getLogger("telegram.ext.Updater")
+    if not any(isinstance(f, _QuietConflictFilter) for f in lg.filters):
+        lg.addFilter(_QuietConflictFilter())
+
+
 def _polling_error(exc: TelegramError) -> None:
     """Polling error callback. A Conflict means ANOTHER process polls with the same bot token
     (old deploy still shutting down, a local copy, a second service). Log one short, rate-limited
@@ -274,6 +290,7 @@ async def start_bot(settings: Settings, controller: AgentController, engine: Any
         app = build_application(settings, controller)
         if app is None:
             return None
+        _install_conflict_filter()
         await app.initialize()
         await app.start()
         lock = _LeaderLock(engine, str(settings.telegram_bot_token))

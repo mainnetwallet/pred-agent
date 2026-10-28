@@ -246,3 +246,17 @@ def test_leader_lock_fails_open_without_postgres():
 
     assert _LeaderLock(None, "t").try_acquire() is True
     assert _LeaderLock(create_engine("sqlite://"), "t").try_acquire() is True
+
+
+def test_ptb_conflict_error_line_is_filtered() -> None:
+    import logging
+
+    from pred_agent.telegram.bot import _QuietConflictFilter
+
+    f = _QuietConflictFilter()
+
+    def rec(msg: str) -> logging.LogRecord:
+        return logging.LogRecord("telegram.ext.Updater", logging.ERROR, __file__, 1, msg, None, None)
+
+    assert not f.filter(rec("Error while getting Updates: Conflict: terminated by other getUpdates request"))
+    assert f.filter(rec("Error while getting Updates: Bad Gateway"))
