@@ -131,6 +131,53 @@ class LiveRuntime:
         return {"cancelled": cancelled, "failed": failed, "parents": len(parents)}
 
 
+# PRED CLOB auth error codes (docs: Builder / Aggregator Onboarding -> Errors and retries).
+_AUTH_HINTS = {
+    "invalid_l1": "check ClobAuth signature: chain ID, timestamp (within 30s), nonce, and that PRIVATE_KEY is the account EOA",
+    "invalid_l2": "check L2 key/passphrase/secret, uppercase method, canonical path and body",
+    "invalid_auth": "credential revoked, account not eligible, or this EOA is not the account's primary wallet",
+    "aggregator_key_required": "new account: set the PRED-issued partner key (X-Aggregator-API-Key)",
+    "aggregator_account_limit_reached": "partner account-creation limit reached; ask PRED",
+    "nonce_already_used": "credentials already issued for nonce 0; derive with fresh L1 headers",
+}
+
+
+def describe_auth_error(exc: BaseException) -> str:
+    """Human-readable cause for a CLOB auth failure: HTTP status + PRED error code + hint.
+
+    ``httpx.HTTPStatusError`` alone hides everything useful, so read the response body.
+    """
+    import json as _json
+
+    response = getattr(exc, "response", None)
+    if response is None:
+        return f"{type(exc).__name__}: {exc}"[:200]
+    status = getattr(response, "status_code", "?")
+    code = ""
+    try:
+        data = _json.loads(response.text)
+        if isinstance(data, dict):
+            err = data.get("error") or data.get("code") or data.get("message") or ""
+            if isinstance(err, dict):
+                err = err.get("code") or err.get("message") or ""
+            code = str(err)[:120]
+    except ValueError:
+        pass
+    hint = next((h for k, h in _AUTH_HINTS.items() if k in code), "")
+    if not hint and status == 429:
+        hint = "rate limited; retry later"
+    elif not hint and isinstance(status, int) and status >= 500:
+        hint = "PRED server error; retry later"
+    elif not hint and status in (401, 403):
+        hint = "authentication rejected; verify PRIVATE_KEY, partner key, and that the account exists"
+    out = f"HTTP {status}"
+    if code:
+        out += f" {code}"
+    if hint:
+        out += f" ({hint})"
+    return out
+
+
 def setup_live(
     *,
     settings: Any,
@@ -158,7 +205,7 @@ def setup_live(
             auth.derive_credentials(0)
         status = transport.account_status()
     except Exception as exc:  # noqa: BLE001
-        raise LiveSetupError(f"could not authenticate with PRED CLOB: {type(exc).__name__}") from exc
+        raise LiveSetupError(f"could not authenticate with PRED CLOB: {describe_auth_error(exc)}") from exc
 
     proxy = str(status.get("proxy_wallet_address") or "").strip()
     if not proxy:

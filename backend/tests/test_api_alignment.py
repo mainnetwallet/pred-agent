@@ -102,3 +102,14 @@ def test_balance_http_error_stays_unavailable_and_logs_pred_error(caplog):
         asyncio.run(refresh_balance_once(controller=ctl, transport=_Raising()))
     assert ctl.balance is None
     assert "HTTP 401" in caplog.text and "invalid_l2" in caplog.text
+
+
+def test_describe_auth_error_shows_status_code_and_hint():
+    from pred_agent.execution.live_runtime import describe_auth_error
+
+    req = httpx.Request("GET", "https://www.pred.app/clob/auth/derive-api-key")
+    resp = httpx.Response(401, request=req, json={"error": "invalid_auth"})
+    exc = httpx.HTTPStatusError("401", request=req, response=resp)
+    msg = describe_auth_error(exc)
+    assert "HTTP 401" in msg and "invalid_auth" in msg and "primary wallet" in msg
+    assert describe_auth_error(RuntimeError("boom")).startswith("RuntimeError")
