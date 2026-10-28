@@ -65,23 +65,14 @@ class _NullTransport:
 
 
 def build_book_feed(settings: Any) -> BookFeed:
-    """Build a BookFeed with the best available transport."""
+    """Build a BookFeed with the transport for the configured PRED auth path (JWT or CLOB)."""
     if getattr(settings, "private_key", None):
         try:
-            from pred_agent.auth.clob_auth import ClobAuth
-            from pred_agent.signer.eip712 import private_to_address
-            from pred_agent.transport.clob_transport import ClobTransport
+            from pred_agent.transport.factory import build_transport
 
-            auth = ClobAuth(
-                eoa_address=private_to_address(settings.private_key),
-                private_key=settings.private_key,
-                chain_id=settings.chain_id,
-                base_url=settings.host,
-                aggregator_api_key=getattr(settings, "pred_partner_key", None),
-            )
-            return BookFeed(ClobTransport(auth, base_url=settings.host))
+            return BookFeed(build_transport(settings))
         except Exception:
-            log.warning("could not build CLOB transport; book feed runs unauthenticated", exc_info=True)
+            log.warning("could not build PRED transport; book feed runs unauthenticated", exc_info=True)
     return BookFeed(_NullTransport())
 
 

@@ -31,6 +31,7 @@ from pred_agent.positions import Position, PositionManager
 from pred_agent.proposals import Proposal, ProposalService, ProposalStatus
 from pred_agent.rules import Rule, RulesService
 from pred_agent.store.repository import OrderRepo, PositionRepo, ProposalRepo, RuleRepo
+from pred_agent.transport.factory import resolve_auth_mode
 from pred_agent.util.decimals import order_amount_usd, quantity_for_amount
 
 if TYPE_CHECKING:
@@ -135,7 +136,7 @@ class AgentController:
         return {
             **live_info,
             "mode": self.mode,
-            "auth_mode": "jwt" if self.settings.pred_api_key else "clob",
+            "auth_mode": resolve_auth_mode(self.settings),
             "feeds_ok": self.feeds_ok,
             "feed_diag": dict(self._feed_diag) if self._feed_diag is not None else None,
             "balance": self._balance_usd,   # null = not available

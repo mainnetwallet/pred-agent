@@ -199,28 +199,48 @@ def setup_live(
         raise LiveSetupError("PRIVATE_KEY is not set")
     auth = getattr(transport, "auth", None)
     if auth is None or not hasattr(transport, "account_status"):
-        raise LiveSetupError("live trading needs the CLOB transport (no PRED_API_KEY/JWT path wired)")
+        raise LiveSetupError("no authenticated PRED transport (set PRIVATE_KEY and PRED_API_KEY or CLOB access)")
 
     eoa = private_to_address(private_key)
+    is_jwt = hasattr(auth, "login") and not hasattr(auth, "derive_credentials")
     try:
-        auth.sync_clock()
-        if auth.credentials is None:
-            # Existing account: derive, else create L2 creds for it (never a new account/quota).
-            (getattr(auth, "ensure_credentials", None) or auth.derive_credentials)(0)
+        if not is_jwt:
+            # CLOB (aggregator) path: derive, else create L2 creds for an EXISTING account
+            # (never a new account/quota).
+            auth.sync_clock()
+            if auth.credentials is None:
+                (getattr(auth, "ensure_credentials", None) or auth.derive_credentials)(0)
+        # JWT path: account_status() performs the real login-with-signature itself.
         status = transport.account_status()
     except Exception as exc:  # noqa: BLE001
+        path = "JWT login" if is_jwt else "CLOB"
         raise LiveSetupError(
-            f"could not authenticate with PRED CLOB: {describe_auth_error(exc)} [EOA {eoa}]"
+            f"could not authenticate with PRED ({path}): {describe_auth_error(exc)} [EOA {eoa}]"
         ) from exc
 
     proxy = str(status.get("proxy_wallet_address") or "").strip()
     if not proxy:
         raise LiveSetupError("account has no Safe proxy wallet yet; finish account setup first")
-    if str(status.get("next_step") or "") != "ready":
-        raise LiveSetupError(f"account not ready (next_step={status.get('next_step')!r})")
     remote_eoa = str(status.get("eoa") or "").lower()
     if remote_eoa and remote_eoa != eoa.lower():
         raise LiveSetupError("PRIVATE_KEY wallet does not match the PRED account's EOA")
+    expected_proxy = str(getattr(settings, "pred_proxy_address", None) or "").strip().lower()
+    if expected_proxy and expected_proxy != proxy.lower():
+        raise LiveSetupError(
+            f"PRED reports Safe {proxy} for this EOA but PRED_PROXY_ADDRESS is {expected_proxy}; "
+            "refusing to trade from a different account"
+        )
+    if status.get("is_new_user") is True and not expected_proxy:
+        raise LiveSetupError(
+            "PRED reports this EOA as a NEW user (not your existing account). Refusing to trade; "
+            "check PRIVATE_KEY, or set PRED_PROXY_ADDRESS to your existing Safe to confirm it"
+        )
+    if str(status.get("next_step") or "") != "ready":
+        hint = (
+            " (PRED reports is_enabled_trading=false: complete Safe approval, then re-login)"
+            if is_jwt else ""
+        )
+        raise LiveSetupError(f"account not ready (next_step={status.get('next_step')!r}){hint}")
 
     def market_check(market_id: str) -> str | None:
         ctx = market_lookup(market_id)

@@ -50,6 +50,13 @@ class Settings(BaseSettings):
     # and it consumes one unit of PRED's lifetime account-creation limit.
     pred_partner_key: str | None = None
     private_key: str | None = None
+    # "auto": JWT when PRED_API_KEY is set (ordinary PRED account), else CLOB.
+    # "jwt" / "clob" force one path; the two are NOT interchangeable.
+    pred_auth_mode: str = "auto"
+    # Optional guard: the EXISTING PRED Safe (proxy wallet) address. When set, live arming
+    # fails closed unless PRED reports exactly this proxy for the signing EOA, so the agent can
+    # never trade from a different/newly created account.
+    pred_proxy_address: str | None = None
     llm_api_key: str | None = None
     llm_model: str | None = None
     llm_base_url: str = "https://api.openai.com/v1"
@@ -138,6 +145,32 @@ class Settings(BaseSettings):
     @classmethod
     def _strip_partner_key(cls, v: Any) -> Any:
         # Blank / whitespace-only Render env var means "not configured".
+        if isinstance(v, str):
+            return v.strip() or None
+        return v
+
+    @field_validator("pred_auth_mode", mode="before")
+    @classmethod
+    def _validate_auth_mode(cls, v: Any) -> Any:
+        v = (v or "auto").strip().lower() if isinstance(v, str) else "auto"
+        if v not in ("auto", "jwt", "clob"):
+            raise ValueError("PRED_AUTH_MODE must be auto, jwt or clob")
+        return v
+
+    @field_validator("pred_proxy_address", mode="before")
+    @classmethod
+    def _validate_proxy_address(cls, v: Any) -> Any:
+        if isinstance(v, str):
+            v = v.strip()
+            if not v:
+                return None
+            if not (v.startswith("0x") and len(v) == 42):
+                raise ValueError("PRED_PROXY_ADDRESS must be 0x + 40 hex chars")
+        return v
+
+    @field_validator("pred_api_key", mode="before")
+    @classmethod
+    def _strip_api_key(cls, v: Any) -> Any:
         if isinstance(v, str):
             return v.strip() or None
         return v

@@ -41,6 +41,10 @@ services:
         sync: false
       - key: PRED_API_KEY
         sync: false
+      - key: PRED_AUTH_MODE   # auto (default) | jwt | clob
+        value: auto
+      - key: PRED_PROXY_ADDRESS  # your EXISTING PRED Safe; live arming refuses any other
+        sync: false
       - key: PRED_PARTNER_KEY  # optional: PRED-issued partner key; creates a NEW CLOB account only
         sync: false
       - key: LLM_API_KEY

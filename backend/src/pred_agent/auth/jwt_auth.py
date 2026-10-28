@@ -11,23 +11,56 @@ Grounded in kit/02_PRED_API_SPEC.md section 3 and live docs (Authentication).
 from __future__ import annotations
 
 import threading
-from dataclasses import dataclass
+import time
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from typing import Any
 
 import httpx
 
 from ..signer.eip712 import sign_create_proxy
 
 
+class JwtAuthError(RuntimeError):
+    """JWT login/refresh failed. ``str(exc)`` is safe to log/show: it never contains a token,
+    key, signature or request body, only the HTTP status and PRED's short error code."""
+
+    def __init__(self, message: str, status: int | None = None) -> None:
+        super().__init__(message)
+        self.status = status
+
+
+def _safe_error(resp: httpx.Response) -> str:
+    """Short, secret-free description of a failed auth reply (status + PRED error code)."""
+    import json as _json
+
+    code = ""
+    try:
+        data = _json.loads(resp.text)
+        if isinstance(data, dict):
+            err = data.get("error")
+            if isinstance(err, dict):
+                code = str(err.get("code") or err.get("message") or "")
+            elif err:
+                code = str(err)
+            else:
+                code = str(data.get("message") or "")
+    except ValueError:
+        pass
+    return f"HTTP {resp.status_code}" + (f" {code[:80]}" if code else "")
+
+
 @dataclass
 class JwtTokens:
-    access_token: str
-    refresh_token: str
+    # repr=False: a stray log/print of this object must never leak a bearer/refresh token.
+    access_token: str = field(repr=False)
+    refresh_token: str = field(repr=False)
     proxy_wallet_addr: str
     wallet_address: str
     user_id: str
     is_enabled_trading: bool
     expires_at: datetime | None = None  # decoded from JWT exp, if available
+    is_new_user: bool = False  # login reply flag: PRED did not know this EOA before this login
 
 
 class JwtAuth:
@@ -63,10 +96,18 @@ class JwtAuth:
     # Public API
     # ------------------------------------------------------------------ #
 
+    def _now(self) -> int:
+        """Unix seconds. (Same name as ClobAuth so the executor can stamp orders uniformly.)"""
+        return int(time.time())
+
     def login(self) -> JwtTokens:
-        """Perform a full login-with-signature. Returns new tokens."""
-        nonce = str(int(__import__("time").time() * 1_000_000_000))  # nanosecond-ish
-        timestamp = int(__import__("time").time())
+        """Perform a full login-with-signature. Returns new tokens.
+
+        Raises ``JwtAuthError`` (safe message) on any HTTP/shape failure; never returns
+        partially-parsed tokens.
+        """
+        nonce = str(time.time_ns())  # docs: SDK uses a nanosecond timestamp
+        timestamp = int(time.time())
         signature = sign_create_proxy(
             self._chain_id, self._create_proxy_factory, self._private_key
         )
@@ -81,25 +122,54 @@ class JwtAuth:
             }
         }
         headers = {"X-API-Key": self._api_key}
-        resp = self._http.post(
-            f"{self._base_url}/api/v1/auth/login-with-signature",
-            json=body,
-            headers=headers,
-        )
-        resp.raise_for_status()
-        data = resp.json()["data"]
-        tokens = JwtTokens(
-            access_token=data["access_token"],
-            refresh_token=data.get("refresh_token", ""),
-            proxy_wallet_addr=data["proxy_wallet_addr"],
-            wallet_address=data["wallet_address"],
-            user_id=data["data"]["user_id"],
-            is_enabled_trading=bool(data["data"].get("is_enabled_trading", False)),
-            expires_at=self._decode_exp(data["access_token"]),
-        )
+        try:
+            resp = self._http.post(
+                f"{self._base_url}/api/v1/auth/login-with-signature",
+                json=body,
+                headers=headers,
+            )
+        except httpx.HTTPError as exc:
+            raise JwtAuthError(f"login request failed: {type(exc).__name__}") from None
+        if resp.status_code >= 400:
+            raise JwtAuthError(f"login rejected: {_safe_error(resp)}", resp.status_code)
+        tokens = self._parse_login(resp)
         with self._lock:
             self._tokens = tokens
         return tokens
+
+    def _parse_login(self, resp: httpx.Response) -> JwtTokens:
+        try:
+            payload: Any = resp.json()
+            data = payload["data"]
+            nested = data.get("data") or {}
+            access = data["access_token"]
+            proxy = data.get("proxy_wallet_addr") or nested.get("proxy_wallet_addr") or ""
+            wallet = data.get("wallet_address") or nested.get("wallet_address") or ""
+            user_id = nested.get("user_id") or data.get("user_id") or ""
+        except (ValueError, KeyError, TypeError, AttributeError):
+            raise JwtAuthError("login reply has an unrecognised shape") from None
+        if not isinstance(access, str) or not access:
+            raise JwtAuthError("login reply has no access_token")
+        return JwtTokens(
+            access_token=access,
+            refresh_token=str(data.get("refresh_token") or "") or self._extract_refresh_cookie(resp),
+            proxy_wallet_addr=str(proxy),
+            wallet_address=str(wallet) or self._eoa_address,
+            user_id=str(user_id),
+            # Missing flag => NOT enabled (never assume trading is allowed).
+            is_enabled_trading=nested.get("is_enabled_trading") is True,
+            expires_at=self._decode_exp(access),
+            is_new_user=nested.get("is_new_user") is True,
+        )
+
+    def invalidate(self) -> None:
+        """Drop cached tokens so the next call performs a fresh login."""
+        with self._lock:
+            self._tokens = None
+
+    def snapshot(self) -> JwtTokens | None:
+        with self._lock:
+            return self._tokens
 
     def refresh(self) -> JwtTokens:
         """Refresh the access token. Single-flight; new refresh from Set-Cookie.
@@ -124,21 +194,30 @@ class JwtAuth:
         headers = {"X-Refresh-Token": refresh_token}
         # Also send current access token as Bearer (docs list both options)
         headers["Authorization"] = f"Bearer {self._tokens.access_token}"
-        resp = self._http.post(
-            f"{self._base_url}/api/v1/auth/refresh/token",
-            headers=headers,
-        )
+        try:
+            resp = self._http.post(
+                f"{self._base_url}/api/v1/auth/refresh/token",
+                headers=headers,
+            )
+        except httpx.HTTPError as exc:
+            raise JwtAuthError(f"refresh request failed: {type(exc).__name__}") from None
         if resp.status_code == 401:
-            # Token already used or invalid — re-login
+            # Refresh token already used (rotation) or expired — fall back to a full login.
             return self.login()
-        resp.raise_for_status()
-        body = resp.json()
+        if resp.status_code >= 400:
+            raise JwtAuthError(f"refresh rejected: {_safe_error(resp)}", resp.status_code)
+        try:
+            body = resp.json()
+        except ValueError:
+            raise JwtAuthError("refresh reply is not JSON") from None
+        if not isinstance(body, dict):
+            raise JwtAuthError("refresh reply has an unrecognised shape")
         # Docs: {"success", "data": {"access_token", "user_id", "proxy_wallet_address",
         # "is_enabled_trading", "data": {...}}} — access_token is nested under data.
         inner = body.get("data") or {}
         access_token = inner.get("access_token") or body.get("access_token")
-        if not access_token:
-            raise RuntimeError("refresh response has no access_token")
+        if not isinstance(access_token, str) or not access_token:
+            raise JwtAuthError("refresh response has no access_token")
         nested = inner.get("data") or {}
         enabled = inner.get("is_enabled_trading", nested.get("is_enabled_trading"))
         # New refresh token comes only in Set-Cookie per spec; fall back to body
@@ -158,6 +237,7 @@ class JwtAuth:
                 self._tokens.is_enabled_trading if enabled is None else bool(enabled)
             ),
             expires_at=self._decode_exp(access_token),
+            is_new_user=self._tokens.is_new_user,
         )
         # Persist new token before discarding old (atomic swap under lock)
         self._tokens = tokens
@@ -194,6 +274,9 @@ class JwtAuth:
 
     def _extract_refresh_cookie(self, resp: httpx.Response) -> str:
         """Extract refresh_token from Set-Cookie header."""
+        jar = resp.cookies.get("refresh_token")
+        if jar:
+            return str(jar)
         cookie: str = resp.headers.get("Set-Cookie", "")
         for raw_part in cookie.split(";"):
             part = raw_part.strip()

@@ -13,7 +13,7 @@ from typing import Any
 
 import httpx
 
-from ..auth.jwt_auth import JwtAuth
+from ..auth.jwt_auth import JwtAuth, JwtAuthError
 from .protocol import PredTransport, PredTransportError, TransportCaps
 
 
@@ -65,11 +65,26 @@ class JwtTransport(PredTransport):
     # ------------------------------------------------------------------ #
 
     def account_status(self) -> dict[str, Any]:
-        """CLOB-style account status (JWT: portfolio endpoints need auth headers).
-        For JWT, we use /api/v1/auth/login response data instead; this is a
-        placeholder kept for interface symmetry.
+        """Account identity + trading eligibility, taken from the REAL login reply.
+
+        Shaped like the CLOB ``account-status`` so ``setup_live`` can treat both paths alike.
+        ``next_step == "ready"`` only when PRED itself reported ``is_enabled_trading=true``;
+        authentication success alone never implies trading permission. Raises
+        ``PredTransportError`` if login fails (never returns an invented status).
         """
-        raise NotImplementedError("JWT account status comes from login response")
+        try:
+            tokens = self.auth.snapshot() or self.auth.login()
+        except JwtAuthError as exc:
+            raise PredTransportError(exc.status or 401, str(exc), raw_body=str(exc)) from None
+        enabled = bool(tokens.is_enabled_trading)
+        return {
+            "auth_mode": "jwt",
+            "eoa": tokens.wallet_address,
+            "proxy_wallet_address": tokens.proxy_wallet_addr,
+            "is_enabled_trading": enabled,
+            "is_new_user": bool(tokens.is_new_user),
+            "next_step": "ready" if enabled else "safe_approval_required",
+        }
 
     def safe_approval_prepare(self, proxy_creation_signature: str | None = None) -> dict[str, Any]:
         body: dict[str, Any] = {}
@@ -110,10 +125,24 @@ class JwtTransport(PredTransport):
 
     def _raw_request(self, method: str, path: str, params: dict[str, Any] | None = None,
                      json: dict[str, Any] | None = None) -> tuple[int, str, dict[str, Any]]:
-        self.auth._ensure_valid()
-        assert self.auth._tokens is not None
-        proxy = self.auth._tokens.proxy_wallet_addr
-        headers = self.auth.access_headers(proxy)
+        status, text, headers = self._send(method, path, params, json)
+        if status == 401 and method.upper() == "GET":
+            # Expired/revoked access token on a READ: drop it and retry once with a fresh login.
+            # Never auto-retry writes (place/cancel): a signed order must not be re-sent blindly.
+            self.auth.invalidate()
+            status, text, headers = self._send(method, path, params, json)
+        return status, text, headers
+
+    def _send(self, method: str, path: str, params: dict[str, Any] | None,
+              json: dict[str, Any] | None) -> tuple[int, str, dict[str, Any]]:
+        try:
+            self.auth._ensure_valid()
+            tokens = self.auth.snapshot()
+            if tokens is None:
+                raise JwtAuthError("no JWT session", 401)
+            headers = self.auth.access_headers(tokens.proxy_wallet_addr)
+        except JwtAuthError as exc:
+            raise PredTransportError(exc.status or 401, str(exc), raw_body=str(exc)) from None
         resp = self._http.request(
             method, f"{self._base_url}{path}", params=params, json=json, headers=headers
         )

@@ -188,7 +188,7 @@ class LiveExecutor:
         intent.amount_usd = order_amount_usd(intent.side, intent.price_cents, intent.quantity)
 
         # 2. Build order
-        salt = secrets.randbelow(2**128)  # cryptographically random uint256 (subset for safety)
+        salt = secrets.randbits(256)  # docs: cryptographically random uint256, fresh per order intent
         price_wei = price_cents_to_wei(intent.price_cents)
         quantity_wei = shares_to_wei(intent.quantity)
 
