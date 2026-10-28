@@ -156,6 +156,41 @@ def _error_from_raw(raw: str | None) -> str:
 _AUTH_RETRY_BACKOFF_S = 300  # after a refused CLOB auth, wait before asking PRED again
 
 
+def build_account_service(settings: Any) -> Any | None:
+    """JWT account service (ordinary login). None unless PRED_API_KEY and PRIVATE_KEY are set.
+
+    Independent of the CLOB client built in ``build_book_feed``; credentials are never shared.
+    """
+    api_key = (getattr(settings, "pred_api_key", None) or "").strip()
+    private_key = getattr(settings, "private_key", None)
+    if not api_key or not private_key:
+        return None
+    from pred_agent.account import AccountService
+    from pred_agent.auth.jwt_auth import JwtAuth
+    from pred_agent.signer.eip712 import private_to_address
+    from pred_agent.transport.jwt_transport import JwtTransport
+
+    auth = JwtAuth(
+        api_key=api_key,
+        private_key=private_key,
+        eoa_address=private_to_address(private_key),
+        chain_id=settings.chain_id,
+        create_proxy_factory=settings.create_proxy_factory,
+        login_message=settings.auth_login_message,
+        base_url=settings.host,
+        refresh_threshold_seconds=settings.refresh_threshold_seconds,
+    )
+    return AccountService(auth, JwtTransport(auth, base_url=settings.host))
+
+
+async def refresh_account_once(*, controller: AgentController, service: Any) -> None:
+    """Refresh the JWT account snapshot (wallet, Safe address, cash). Never fakes a balance."""
+    snap = await asyncio.to_thread(service.refresh)
+    controller.set_account(snap)
+    if snap.get("state") != "ok":
+        log.warning("account unavailable: state=%s code=%s", snap.get("state"), snap.get("code"))
+
+
 async def refresh_balance_once(*, controller: AgentController, transport: Any) -> None:
     """Fetch available USDC via the transport; unavailable stays None (never faked)."""
     getter = getattr(transport, "get_balance", None)
@@ -362,6 +397,7 @@ async def run_background_tasks(
     monitor: RulesMonitor | None = None,
     alert_fn: AlertFn | None = None,
     stop: asyncio.Event | None = None,
+    account: Any | None = None,
 ) -> None:
     """Run scanner + rules monitor + CLOB poller until stop is set."""
     stop_ev = stop or asyncio.Event()
@@ -399,11 +435,17 @@ async def run_background_tasks(
                 log.warning("rules monitor pass failed", exc_info=True)
             await asyncio.sleep(max(1, controller.settings.scan_interval_seconds))
 
+    account_service = account if account is not None else build_account_service(controller.settings)
+
     async def balance_loop() -> None:
         transport = getattr(book_feed, "transport", None)
         while not stop_ev.is_set():
             try:
-                await refresh_balance_once(controller=controller, transport=transport)
+                if account_service is not None:
+                    # JWT mode (PRED_API_KEY set): balance comes from the JWT portfolio API.
+                    await refresh_account_once(controller=controller, service=account_service)
+                else:
+                    await refresh_balance_once(controller=controller, transport=transport)
             except Exception:
                 controller.set_balance(None)
                 log.warning("balance refresh failed", exc_info=True)
@@ -413,7 +455,7 @@ async def run_background_tasks(
                 pass
 
     tasks = [asyncio.create_task(scan_loop()), asyncio.create_task(monitor_loop())]
-    if book_feed is not None:
+    if book_feed is not None or account_service is not None:
         tasks.append(asyncio.create_task(balance_loop()))
     if book_feed is not None:
         await book_feed.start()

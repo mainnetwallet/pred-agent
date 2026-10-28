@@ -11,12 +11,44 @@ Grounded in kit/02_PRED_API_SPEC.md section 3 and live docs (Authentication).
 from __future__ import annotations
 
 import threading
+import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from typing import Any
 
 import httpx
 
 from ..signer.eip712 import sign_create_proxy
+from ..util.redaction import redact
+
+
+class JwtAuthError(Exception):
+    """JWT login/refresh failure with a stable ``code`` and a message safe to show in a UI.
+
+    Never carries tokens, keys or signatures: remote error text is redacted and truncated.
+    Codes: api_key_missing, private_key_missing, login_rejected (401/403), network,
+    upstream_error (other HTTP failures), bad_response (200 without the documented fields).
+    """
+
+    def __init__(self, code: str, message: str, status: int | None = None) -> None:
+        super().__init__(message)
+        self.code = code
+        self.message = message
+        self.status = status
+
+
+def _remote_error(resp: httpx.Response) -> str:
+    """Best-effort PRED error code/message from an ErrorResponse body (redacted, truncated)."""
+    try:
+        body = resp.json()
+    except ValueError:
+        return redact(resp.text or "")[:120]
+    if not isinstance(body, dict):
+        return ""
+    err = body.get("error")
+    if isinstance(err, dict):
+        err = err.get("code") or err.get("message")
+    return redact(str(err or body.get("message") or ""))[:120]
 
 
 @dataclass
@@ -64,9 +96,20 @@ class JwtAuth:
     # ------------------------------------------------------------------ #
 
     def login(self) -> JwtTokens:
-        """Perform a full login-with-signature. Returns new tokens."""
-        nonce = str(int(__import__("time").time() * 1_000_000_000))  # nanosecond-ish
-        timestamp = int(__import__("time").time())
+        """Perform a full login-with-signature. Returns new tokens.
+
+        Docs (Authentication): ``X-API-Key`` is REQUIRED for this call, so a missing
+        ``PRED_API_KEY`` fails here (before any network call) instead of as an opaque 401.
+        """
+        if not (self._api_key or "").strip():
+            raise JwtAuthError(
+                "api_key_missing",
+                "PRED_API_KEY is not set. PRED requires an X-API-Key for login-with-signature.",
+            )
+        if not (self._private_key or "").strip():
+            raise JwtAuthError("private_key_missing", "PRIVATE_KEY is not set; cannot sign the login.")
+        nonce = str(time.time_ns())
+        timestamp = int(time.time())
         signature = sign_create_proxy(
             self._chain_id, self._create_proxy_factory, self._private_key
         )
@@ -81,25 +124,55 @@ class JwtAuth:
             }
         }
         headers = {"X-API-Key": self._api_key}
-        resp = self._http.post(
-            f"{self._base_url}/api/v1/auth/login-with-signature",
-            json=body,
-            headers=headers,
-        )
-        resp.raise_for_status()
-        data = resp.json()["data"]
-        tokens = JwtTokens(
-            access_token=data["access_token"],
-            refresh_token=data.get("refresh_token", ""),
-            proxy_wallet_addr=data["proxy_wallet_addr"],
-            wallet_address=data["wallet_address"],
-            user_id=data["data"]["user_id"],
-            is_enabled_trading=bool(data["data"].get("is_enabled_trading", False)),
-            expires_at=self._decode_exp(data["access_token"]),
-        )
+        try:
+            resp = self._http.post(
+                f"{self._base_url}/api/v1/auth/login-with-signature",
+                json=body,
+                headers=headers,
+            )
+        except httpx.HTTPError as exc:
+            raise JwtAuthError("network", f"PRED login unreachable ({type(exc).__name__})") from exc
+        if resp.status_code >= 400:
+            detail = _remote_error(resp)
+            code = "login_rejected" if resp.status_code in (401, 403) else "upstream_error"
+            raise JwtAuthError(
+                code,
+                f"PRED login failed: HTTP {resp.status_code}" + (f" ({detail})" if detail else ""),
+                status=resp.status_code,
+            )
+        tokens = self._parse_login(resp)
         with self._lock:
             self._tokens = tokens
         return tokens
+
+    def _parse_login(self, resp: httpx.Response) -> JwtTokens:
+        """Map the documented LoginResponse: ``data.{access_token, refresh_token,
+        proxy_wallet_addr, wallet_address, data.{user_id, is_enabled_trading}}``."""
+        try:
+            body = resp.json()
+        except ValueError as exc:
+            raise JwtAuthError("bad_response", "PRED login returned a non-JSON body") from exc
+        data: dict[str, Any] = body.get("data") if isinstance(body, dict) else None  # type: ignore[assignment]
+        if not isinstance(data, dict):
+            raise JwtAuthError("bad_response", "PRED login response has no data object")
+        nested = data.get("data") if isinstance(data.get("data"), dict) else {}
+        # Docs: token is in the body and also in the X-Access-Token header.
+        access_token = data.get("access_token") or resp.headers.get("X-Access-Token")
+        proxy = data.get("proxy_wallet_addr") or nested.get("proxy_wallet_addr")
+        if not access_token or not proxy:
+            raise JwtAuthError(
+                "bad_response", "PRED login response is missing access_token or proxy_wallet_addr"
+            )
+        return JwtTokens(
+            access_token=access_token,
+            refresh_token=data.get("refresh_token") or self._extract_refresh_cookie(resp),
+            proxy_wallet_addr=proxy,
+            # X-Wallet-Address is the EOA that signed the login.
+            wallet_address=data.get("wallet_address") or nested.get("wallet_address") or self._eoa_address,
+            user_id=str(nested.get("user_id") or data.get("user_id") or ""),
+            is_enabled_trading=bool(nested.get("is_enabled_trading", data.get("is_enabled_trading", False))),
+            expires_at=self._decode_exp(access_token),
+        )
 
     def refresh(self) -> JwtTokens:
         """Refresh the access token. Single-flight; new refresh from Set-Cookie.
@@ -124,21 +197,33 @@ class JwtAuth:
         headers = {"X-Refresh-Token": refresh_token}
         # Also send current access token as Bearer (docs list both options)
         headers["Authorization"] = f"Bearer {self._tokens.access_token}"
-        resp = self._http.post(
-            f"{self._base_url}/api/v1/auth/refresh/token",
-            headers=headers,
-        )
+        try:
+            resp = self._http.post(
+                f"{self._base_url}/api/v1/auth/refresh/token",
+                headers=headers,
+            )
+        except httpx.HTTPError as exc:
+            raise JwtAuthError("network", f"PRED token refresh unreachable ({type(exc).__name__})") from exc
         if resp.status_code == 401:
             # Token already used or invalid — re-login
             return self.login()
-        resp.raise_for_status()
-        body = resp.json()
+        if resp.status_code >= 400:
+            detail = _remote_error(resp)
+            raise JwtAuthError(
+                "upstream_error",
+                f"PRED token refresh failed: HTTP {resp.status_code}" + (f" ({detail})" if detail else ""),
+                status=resp.status_code,
+            )
+        try:
+            body = resp.json()
+        except ValueError as exc:
+            raise JwtAuthError("bad_response", "PRED refresh returned a non-JSON body") from exc
         # Docs: {"success", "data": {"access_token", "user_id", "proxy_wallet_address",
         # "is_enabled_trading", "data": {...}}} — access_token is nested under data.
         inner = body.get("data") or {}
         access_token = inner.get("access_token") or body.get("access_token")
         if not access_token:
-            raise RuntimeError("refresh response has no access_token")
+            raise JwtAuthError("bad_response", "PRED refresh response has no access_token")
         nested = inner.get("data") or {}
         enabled = inner.get("is_enabled_trading", nested.get("is_enabled_trading"))
         # New refresh token comes only in Set-Cookie per spec; fall back to body
@@ -183,6 +268,23 @@ class JwtAuth:
                 remaining = (self._tokens.expires_at - datetime.now(timezone.utc)).total_seconds()
                 if remaining < self._refresh_threshold:
                     self._refresh_locked()
+
+    def recover_session(self) -> JwtTokens:
+        """After an API 401: try the refresh token once, else a fresh login (single-flight)."""
+        with self._lock:
+            return self._refresh_locked()
+
+    def account(self) -> dict[str, Any]:
+        """Non-secret account identity for display: EOA, proxy (Safe) address, trading flag."""
+        with self._lock:
+            t = self._tokens
+            if t is None:
+                return {}
+            return {
+                "wallet_address": t.wallet_address,
+                "proxy_address": t.proxy_wallet_addr,
+                "trading_enabled": t.is_enabled_trading,
+            }
 
     def is_enabled_trading(self) -> bool:
         with self._lock:

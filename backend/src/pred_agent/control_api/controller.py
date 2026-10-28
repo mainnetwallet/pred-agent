@@ -22,6 +22,7 @@ from decimal import ROUND_DOWN, Decimal
 from enum import Enum
 from typing import TYPE_CHECKING, Any
 
+from pred_agent.account import NOT_CONFIGURED, initial_snapshot
 from pred_agent.config import Settings
 from pred_agent.execution.live_executor import LiveOrderIntent
 from pred_agent.execution.live_runtime import LiveRuntime, MarketContext, MarketLookup
@@ -97,6 +98,10 @@ class AgentController:
         self._last_feed_update: datetime | None = None
         self._feed_diag: dict[str, Any] | None = None  # last scan stats / error
         self._balance_usd: str | None = None   # None = unavailable (never "0.00" fake)
+        # Read-only PRED account view (JWT mode); see pred_agent.account.
+        self._account: dict[str, Any] = initial_snapshot(
+            configured=bool(settings.pred_api_key and settings.private_key)
+        )
 
     # ── status ────────────────────────────────────────────────
 
@@ -119,6 +124,18 @@ class AgentController:
         """Record available USDC (decimal string). None = unavailable (never a fake 0)."""
         self._balance_usd = value
 
+    def set_account(self, snapshot: dict[str, Any]) -> None:
+        """Record the latest JWT account snapshot; cash doubles as the legacy ``balance``."""
+        self._account = snapshot
+        self._balance_usd = snapshot.get("cash_available_usd")
+
+    def account_view(self) -> dict[str, Any]:
+        """Account snapshot for the UI. Without JWT config, show the CLOB balance if there is one."""
+        view = dict(self._account)
+        if view.get("state") == NOT_CONFIGURED and self._balance_usd is not None:
+            view.update(auth_mode="clob", cash_available_usd=self._balance_usd)
+        return view
+
     def mark_feed_updated(self) -> None:
         self._last_feed_update = datetime.now(timezone.utc)
 
@@ -139,6 +156,7 @@ class AgentController:
             "feeds_ok": self.feeds_ok,
             "feed_diag": dict(self._feed_diag) if self._feed_diag is not None else None,
             "balance": self._balance_usd,   # null = not available
+            "account": self.account_view(),
             "exposure": str(exposure),
             "daily_pnl": str(self.positions.daily_pnl()),
             "paused": self.paused,

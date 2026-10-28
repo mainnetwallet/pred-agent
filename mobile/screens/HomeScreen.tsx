@@ -6,7 +6,7 @@ import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import { useUIStore, useProposalsStore } from "../store/index";
 import { Colors, MONO, radius, useTheme, useThemedStyles } from "../utils/theme";
 import { api } from "../services/api";
-import { formatUsd } from "../utils/format";
+import { formatUsd, summarizeAccount } from "../utils/format";
 import { FixtureSummary } from "../types/api";
 import { Card, EmptyState, Icon, ScreenHeader, SectionTitle, SideChip, Stat, StateChip, signedUsd } from "../components/ui";
 
@@ -16,7 +16,8 @@ export const HomeScreen: React.FC = () => {
   const c = useTheme();
   const styles = useThemedStyles(makeStyles);
   const navigation = useNavigation<any>();
-  const { setStatus, mode, paused, feedsOk, balance, exposure, dailyPnl } = useUIStore();
+  const { setStatus, mode, paused, feedsOk, balance, account, exposure, dailyPnl } = useUIStore();
+  const acct = summarizeAccount(account, balance);
   const { proposals, setProposals } = useProposalsStore();
   const [fixtures, setFixtures] = useState<FixtureSummary[]>([]);
   const [refreshing, setRefreshing] = useState(false);
@@ -64,10 +65,21 @@ export const HomeScreen: React.FC = () => {
         ) : null}
 
         <Card style={styles.hero}>
-          <Text style={styles.heroLabel}>Balance</Text>
-          <Text style={styles.heroValue}>{balance == null ? "—" : formatUsd(balance)}</Text>
-          {balance == null && feedsOk ? (
-            <Text style={styles.heroHint}>Balance unavailable — the server could not fetch it from PRED.</Text>
+          <Text style={styles.heroLabel}>Available cash (USDC)</Text>
+          <Text style={styles.heroValue}>{acct.cash}</Text>
+          {acct.headline ? (
+            <Text style={styles.heroHint}>
+              {acct.headline}
+              {acct.detail ? ` — ${acct.detail}` : ""}
+            </Text>
+          ) : null}
+          {acct.safeAddress ? <Text style={styles.heroMeta}>Safe: {acct.safeAddress}</Text> : null}
+          {acct.walletAddress ? <Text style={styles.heroMeta}>Wallet: {acct.walletAddress}</Text> : null}
+          {acct.positionsCost != null || acct.positionsPayout != null ? (
+            <View style={styles.statsRow}>
+              <Stat label="In positions (cost)" value={acct.positionsCost ?? "—"} />
+              <Stat label="Payout if all win" value={acct.positionsPayout ?? "—"} />
+            </View>
           ) : null}
           <View style={styles.divider} />
           <View style={styles.statsRow}>
@@ -151,6 +163,7 @@ const makeStyles = (c: Colors) =>
     heroLabel: { color: c.textSecondary, fontSize: 12, fontWeight: "700", letterSpacing: 0.8, textTransform: "uppercase" },
     heroValue: { color: c.text, fontFamily: MONO, fontSize: 38, fontWeight: "800", marginTop: 4, letterSpacing: -1 },
     heroHint: { color: c.alert, fontSize: 12, marginTop: 6 },
+    heroMeta: { color: c.textSecondary, fontSize: 11, marginTop: 4 },
     divider: { height: 1, backgroundColor: c.border, marginVertical: 16 },
     statsRow: { flexDirection: "row", gap: 16 },
     rowCard: {

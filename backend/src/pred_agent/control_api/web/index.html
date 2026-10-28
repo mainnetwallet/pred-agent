@@ -99,6 +99,18 @@
 
     <!-- Dashboard tab -->
     <div id="pane-dashboard">
+      <h2>PRED account</h2>
+      <div class="card" id="account-card">
+        <div class="grid">
+          <div class="stat"><b id="acct-cash">-</b><span>Available cash (USDC)</span></div>
+          <div class="stat"><b id="acct-cost">-</b><span>In positions (cost basis)</span></div>
+          <div class="stat"><b id="acct-payout">-</b><span>Potential payout if positions win</span></div>
+        </div>
+        <div class="mut" id="acct-state" style="margin-top:8px">Loading…</div>
+        <div class="mut" id="acct-wallet" style="font-size:12px;word-break:break-all"></div>
+        <div class="mut" id="acct-proxy" style="font-size:12px;word-break:break-all"></div>
+        <div class="mut" id="acct-notes" style="font-size:11px;margin-top:6px"></div>
+      </div>
       <h2>Status</h2>
       <div class="card grid">
         <div class="stat"><b id="exposure">-</b><span>Open exposure</span></div>
@@ -338,12 +350,34 @@ function fillList(id, items, build, empty) {
   items.forEach((i) => box.append(build(i)));
 }
 
+function renderAccount(a) {
+  const money = (v) => (v == null ? "—" : usd(v));  // null = unavailable, never shown as $0.00
+  a = a || {};
+  $("acct-cash").textContent = money(a.cash_available_usd);
+  $("acct-cost").textContent = money(a.positions_cost_usd);
+  $("acct-payout").textContent = money(a.positions_payout_usd);
+  const labels = {
+    loading: "Loading account…",
+    ok: "Connected" + (a.auth_mode ? " (" + a.auth_mode.toUpperCase() + ")" : ""),
+    not_configured: "Not configured",
+    unauthenticated: "Login rejected",
+    session_expired: "Session expired",
+    error: "Balance unavailable",
+  };
+  const head = labels[a.state] || "Unknown";
+  $("acct-state").textContent = a.message ? head + " — " + a.message : head;
+  $("acct-wallet").textContent = a.wallet_address ? "Wallet (EOA): " + a.wallet_address : "";
+  $("acct-proxy").textContent = a.proxy_address ? "Safe (proxy) address: " + a.proxy_address : "";
+  $("acct-notes").textContent = a.state === "ok" ? (a.notes || "") : "";
+}
+
 async function refresh() {
   const [st, pr, po, od, lm] = await Promise.all([
     api("/v1/status"), api("/v1/proposals"), api("/v1/positions"), api("/v1/orders"), api("/v1/limits"),
   ]);
   if (!st.ok) return;
   const s = st.data;
+  renderAccount(s.account);
   $("mode").textContent = s.mode;
   $("mode").className = "tag " + (s.mode === "LIVE" ? "live" : "paper");
   $("pausedTag").classList.toggle("hidden", !s.paused);

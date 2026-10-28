@@ -3,7 +3,7 @@
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import * as SecureStore from "expo-secure-store";
-import { Mode, StatusResponse, Proposal, Order, Position, Device } from "../types/api";
+import { AccountView, Mode, StatusResponse, Proposal, Order, Position, Device } from "../types/api";
 import { DEFAULT_SERVER_URL } from "../utils/defaults";
 import { api } from "../services/api";
 
@@ -79,6 +79,7 @@ export interface UIStore {
   paused: boolean;
   feedsOk: boolean;
   balance: string | null; // null = server could not fetch it (never shown as $0.00)
+  account: AccountView | null;
   exposure: string;
   dailyPnl: string;
   pendingProposals: number;
@@ -91,6 +92,7 @@ export const useUIStore = create<UIStore>((set) => ({
   paused: false,
   feedsOk: false,
   balance: null,
+  account: null,
   exposure: "0.00",
   dailyPnl: "0.00",
   pendingProposals: 0,
@@ -100,6 +102,7 @@ export const useUIStore = create<UIStore>((set) => ({
       paused: status.paused,
       feedsOk: status.feeds_ok,
       balance: status.balance ?? null,
+      account: status.account ?? null,
       exposure: status.exposure,
       dailyPnl: status.daily_pnl,
     }),

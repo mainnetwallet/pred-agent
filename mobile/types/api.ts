@@ -10,11 +10,36 @@ export interface ApiEnvelope<T = unknown> {
   audit_id?: string;
 }
 
+export type AccountState =
+  | "not_configured"
+  | "loading"
+  | "ok"
+  | "unauthenticated"
+  | "session_expired"
+  | "error";
+
+// Read-only PRED account view. Money is a decimal string or null (null = unavailable, not zero).
+export interface AccountView {
+  state: AccountState;
+  auth_mode: string;
+  code: string | null;
+  message: string | null;
+  wallet_address: string | null;
+  proxy_address: string | null;
+  trading_enabled: boolean | null;
+  cash_available_usd: string | null;
+  positions_cost_usd: string | null;
+  positions_payout_usd: string | null;
+  notes: string;
+  updated_at: string | null;
+}
+
 export interface StatusResponse {
   mode: Mode;
   auth_mode: string;
   feeds_ok: boolean;
   balance: string | null;
+  account?: AccountView;
   exposure: string;
   daily_pnl: string;
   paused: boolean;

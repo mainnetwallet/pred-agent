@@ -87,6 +87,10 @@ class JwtTransport(PredTransport):
         """GET /api/v1/portfolio/balance — top-level success/usdc_balance/position_balance."""
         return self.get("/api/v1/portfolio/balance")
 
+    def get_positions_summary(self) -> dict[str, Any]:
+        """GET /api/v1/portfolio/positions?verbose=false — top-level totals (cost basis, payout)."""
+        return self.get("/api/v1/portfolio/positions", params={"verbose": "false"})
+
     def ably_token(self) -> dict[str, Any]:
         """POST /api/v1/auth/ably — raw Ably TokenDetails."""
         _, result, _ = self._request("POST", "/api/v1/auth/ably")
@@ -110,11 +114,19 @@ class JwtTransport(PredTransport):
 
     def _raw_request(self, method: str, path: str, params: dict[str, Any] | None = None,
                      json: dict[str, Any] | None = None) -> tuple[int, str, dict[str, Any]]:
+        resp = self._send(method, path, params, json)
+        if resp.status_code == 401:
+            # Expired/revoked access token: refresh (or re-login) once, then retry once.
+            self.auth.recover_session()
+            resp = self._send(method, path, params, json)
+        return resp.status_code, resp.text, dict(resp.headers)
+
+    def _send(self, method: str, path: str, params: dict[str, Any] | None,
+              json: dict[str, Any] | None) -> httpx.Response:
         self.auth._ensure_valid()
         assert self.auth._tokens is not None
         proxy = self.auth._tokens.proxy_wallet_addr
         headers = self.auth.access_headers(proxy)
-        resp = self._http.request(
+        return self._http.request(
             method, f"{self._base_url}{path}", params=params, json=json, headers=headers
         )
-        return resp.status_code, resp.text, dict(resp.headers)
