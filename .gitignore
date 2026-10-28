@@ -37,3 +37,7 @@ deploy/backups/
 
 !.env.example
 !backend/.env.example
+
+# enablement CLI state (prepared tx + signature)
+.enablement_state.json
+backend/.enablement_state.json
