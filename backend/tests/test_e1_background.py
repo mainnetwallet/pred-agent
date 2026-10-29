@@ -336,3 +336,26 @@ async def test_poll_clob_books_fetches_tracked_markets(monkeypatch):
 
 async def _no_auth_none(path: str) -> dict[str, Any] | None:
     return None
+
+
+@pytest.mark.asyncio
+async def test_market_not_found_backs_off_and_skips_auth_fallback(monkeypatch):
+    """PRED 'market not found' must not trigger the authenticated retry or per-poll refetches."""
+    transport = _RawTransport({"bids": [], "asks": []})
+    feed = BookFeed(transport)
+    calls = {"n": 0}
+
+    async def _not_found(path: str, market_id: str | None = None):
+        calls["n"] += 1
+        if market_id:
+            feed._last_fetch_error[market_id] = 'HTTP 503: {"error":"market not found"}'
+        return None
+
+    def _boom(path: str):
+        raise AssertionError("authenticated fallback must not run for market-not-found")
+
+    monkeypatch.setattr(feed, "_http_get_no_auth", _not_found)
+    monkeypatch.setattr(transport, "get", _boom)
+    assert await feed.fetch_book_rest("pm1", "mx1") is None
+    assert await feed.fetch_book_rest("pm1", "mx1") is None  # backed off: no second request
+    assert calls["n"] == 1

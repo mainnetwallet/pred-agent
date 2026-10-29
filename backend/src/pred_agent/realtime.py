@@ -20,6 +20,9 @@ from pred_agent.transport.protocol import PredTransport
 
 logger = logging.getLogger(__name__)
 
+_WARN_EVERY_S = 600.0       # throttle repeated identical warnings
+_MISSING_BACKOFF_S = 1800.0  # skip a market PRED reports as "market not found"
+
 
 @dataclass
 class BookCacheEntry:
@@ -45,6 +48,10 @@ class BookFeed:
         self._parents: dict[str, str] = {}
         # market_id -> last REST orderbook failure ("HTTP 503: {...}"), so tools can say WHY.
         self._last_fetch_error: dict[str, str] = {}
+        # market_id -> monotonic time before which we skip refetching (PRED said "market not found").
+        self._missing_until: dict[str, float] = {}
+        # message key -> monotonic time of last emitted warning (log throttle).
+        self._last_warned: dict[str, float] = {}
         self._running = False
 
     # ------------------------------------------------------------------ #
@@ -87,24 +94,48 @@ class BookFeed:
     # REST book fetch (used by both modes)
     # ------------------------------------------------------------------ #
 
+    def _warn_throttled(self, key: str, msg: str, *args: Any, exc_info: bool = False) -> None:
+        """Emit a warning at most once per _WARN_EVERY_S per key (stops per-poll log spam)."""
+        now = time.monotonic()
+        last = self._last_warned.get(key)
+        if last is None or now - last >= _WARN_EVERY_S:
+            self._last_warned[key] = now
+            logger.warning(msg, *args, exc_info=exc_info)
+
     async def fetch_book_rest(self, parent_market_id: str, market_id: str) -> BookSnapshot | None:
         """Fetch a single orderbook via REST. Try without auth first, fall back to auth."""
+        # PRED said this market does not exist: do not hammer it every poll.
+        if time.monotonic() < self._missing_until.get(market_id, 0.0):
+            return None
         path = f"/api/v1/order/{parent_market_id}/orderbook/{market_id}?depth=10&include_metadata=true"
         # Try without auth
         try:
             self._last_fetch_error.pop(market_id, None)
             raw = await self._http_get_no_auth(path, market_id)
             if raw:
+                self._missing_until.pop(market_id, None)
                 return self._normalize_and_cache(market_id, raw, ws_dollars=False)
+            # "market not found": an authenticated retry cannot help, so back off this market.
+            if "market not found" in self._last_fetch_error.get(market_id, ""):
+                self._missing_until[market_id] = time.monotonic() + _MISSING_BACKOFF_S
+                return None
         except Exception:
-            logger.warning("unauthenticated book fetch failed for %s; trying authenticated transport",
-                           market_id, exc_info=True)
+            self._warn_throttled(
+                f"unauth:{market_id}",
+                "unauthenticated book fetch failed for %s; trying authenticated transport",
+                market_id, exc_info=True,
+            )
         # Fall back to authenticated transport
         try:
             raw = self.transport.get(path)
             return self._normalize_and_cache(market_id, raw, ws_dollars=False)
         except Exception as exc:
-            logger.warning("book fetch failed for market=%s parent=%s: %s", market_id, parent_market_id, exc)
+            # One line per distinct error (not per market) so a CLOB auth outage logs once.
+            self._warn_throttled(
+                f"auth:{type(exc).__name__}:{str(exc)[:80]}",
+                "book fetch failed (e.g. market=%s parent=%s): %s",
+                market_id, parent_market_id, exc,
+            )
             return None
 
     async def _http_get_no_auth(self, path: str, market_id: str | None = None) -> dict[str, Any] | None:
@@ -113,7 +144,10 @@ class BookFeed:
         async with httpx.AsyncClient(timeout=10.0) as client:
             resp = await client.get(f"{settings.host}{path}")
             if resp.status_code >= 400:
-                logger.warning("orderbook GET %s -> HTTP %s: %.200s", path, resp.status_code, resp.text)
+                self._warn_throttled(
+                    f"http:{market_id}:{resp.status_code}",
+                    "orderbook GET %s -> HTTP %s: %.200s", path, resp.status_code, resp.text,
+                )
                 if market_id:
                     self._last_fetch_error[market_id] = f"HTTP {resp.status_code}: {resp.text[:120]}"
                 return None
