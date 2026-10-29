@@ -1,15 +1,17 @@
 /**
- * ChatScreen — multi-turn chat with the PRED Agent.
+ * ChatScreen — multi-turn chat with the PRED Agent, laid out like the ChatGPT app:
+ * empty-state greeting with suggestion pills, full-width assistant replies
+ * (markdown) on the page background, right-aligned user bubbles, and a rounded
+ * composer with a round send button.
  *
- * Phase 8 (D2): KeyboardAvoidingView, auto-scroll, quick chips,
- * loading + error + llm_not_configured states, clear chat,
- * card rendering (rule confirm/cancel with biometric X-Confirm gate).
+ * Keeps: streaming, auto-scroll, loading + error + llm_not_configured states,
+ * new chat, and card rendering (rule/proposal confirm with the X-Confirm gate).
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  ActivityIndicator,
   Alert,
+  Animated,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -24,6 +26,7 @@ import { ChatCard } from "../types/api";
 import { useUIStore } from "../store/index";
 import { Colors, radius, useTheme, useThemedStyles } from "../utils/theme";
 import { Icon, ScreenHeader } from "../components/ui";
+import { Markdown } from "../components/Markdown";
 
 // ── Types ─────────────────────────────────────────────────────
 interface LocalMessage {
@@ -141,6 +144,57 @@ function CardView({
   return null;
 }
 
+// ── Thinking indicator (pulsing dot, like ChatGPT) ────────────
+function Thinking({ label }: { label: string }) {
+  const styles = useThemedStyles(makeStyles);
+  const pulse = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, { toValue: 1, duration: 650, useNativeDriver: true }),
+        Animated.timing(pulse, { toValue: 0, duration: 650, useNativeDriver: true }),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [pulse]);
+  const scale = pulse.interpolate({ inputRange: [0, 1], outputRange: [0.7, 1.15] });
+  const opacity = pulse.interpolate({ inputRange: [0, 1], outputRange: [0.5, 1] });
+  return (
+    <View style={styles.thinkingRow}>
+      <Animated.View style={[styles.thinkingDot, { opacity, transform: [{ scale }] }]} />
+      <Text style={styles.loadingText}>{label}</Text>
+    </View>
+  );
+}
+
+// ── Empty state: greeting + suggestion pills ──────────────────
+function EmptyState({ onPick }: { onPick: (message: string) => void }) {
+  const c = useTheme();
+  const styles = useThemedStyles(makeStyles);
+  return (
+    <View style={styles.empty}>
+      <View style={styles.emptyLogo}>
+        <Icon name="chat" size={28} color={c.primary} />
+      </View>
+      <Text style={styles.emptyTitle}>What can I help with?</Text>
+      <Text style={styles.emptySub}>Live match, positions, rules — বাংলা, Banglish বা English-এ জিজ্ঞেস করুন।</Text>
+      <View style={styles.suggestList}>
+        {QUICK_CHIPS.map((chip) => (
+          <TouchableOpacity
+            key={chip.label}
+            style={styles.suggest}
+            onPress={() => onPick(chip.message)}
+            accessibilityRole="button"
+          >
+            <Text style={styles.suggestText}>{chip.label}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+    </View>
+  );
+}
+
 // ── ChatScreen ────────────────────────────────────────────────
 export default function ChatScreen() {
   const [messages, setMessages] = useState<LocalMessage[]>([]);
@@ -154,14 +208,8 @@ export default function ChatScreen() {
   const styles = useThemedStyles(makeStyles);
   const { mode, paused } = useUIStore();
 
-  // Welcome message
-  useEffect(() => {
-    setMessages([{
-      id: "welcome",
-      role: "assistant",
-      content: "Assalamu Alaikum! 🏟️ PRED Agent here.\nআমি বাংলা, Banglish বা English এ কথা বলতে পারি।\n\nLive match, positions, rules, অথবা trade/rule তৈরি করতে জিজ্ঞেস করুন।",
-    }]);
-  }, []);
+  const isEmpty = messages.length === 0;
+  const canSend = input.trim().length > 0 && !loading;
 
   const scrollToBottom = useCallback(() => {
     setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
@@ -227,24 +275,22 @@ export default function ChatScreen() {
     }
   }, [loading, sessionId]);
 
-  const clearChat = useCallback(async () => {
-    Alert.alert("Clear Chat", "Clear conversation history?", [
+  const newChat = useCallback(() => {
+    if (messages.length === 0 && !sessionId) return;
+    Alert.alert("New chat", "Start a new chat? The current conversation will be cleared.", [
       { text: "Cancel", style: "cancel" },
       {
-        text: "Clear",
+        text: "New chat",
         style: "destructive",
         onPress: async () => {
           if (sessionId) await api.clearChat(sessionId);
           setSessionId(null);
-          setMessages([{
-            id: "cleared",
-            role: "assistant",
-            content: "Chat cleared. How can I help?",
-          }]);
+          setMessages([]);
+          setError(null);
         },
       },
     ]);
-  }, [sessionId]);
+  }, [messages.length, sessionId]);
 
   const handleConfirmRule = useCallback(async (ruleId: string) => {
     const r = await api.confirmRule(ruleId, "biometric-confirmed");
@@ -292,6 +338,9 @@ export default function ChatScreen() {
     }
   }, []);
 
+  const last = messages[messages.length - 1];
+  const showThinking = loading && (!!toolName || last?.role === "user");
+
   return (
     <KeyboardAvoidingView
       style={styles.container}
@@ -303,44 +352,52 @@ export default function ChatScreen() {
         mode={mode}
         paused={paused}
         right={
-          <TouchableOpacity style={styles.headerBtn} onPress={clearChat} accessibilityLabel="Clear chat" hitSlop={8}>
-            <Icon name="trash" size={19} color={c.textSecondary} />
+          <TouchableOpacity style={styles.headerBtn} onPress={newChat} accessibilityLabel="New chat" hitSlop={8}>
+            <Icon name="compose" size={19} color={c.textSecondary} />
           </TouchableOpacity>
         }
       />
 
-      {/* Messages list */}
+      {/* Conversation */}
       <ScrollView
         ref={scrollRef}
         style={styles.messages}
-        contentContainerStyle={styles.messagesContent}
+        contentContainerStyle={[styles.messagesContent, isEmpty && styles.messagesEmpty]}
         keyboardDismissMode="on-drag"
+        keyboardShouldPersistTaps="handled"
       >
-        {messages.map((msg) => (
-          <View
-            key={msg.id}
-            style={[styles.msgBubble, msg.role === "user" ? styles.userBubble : styles.aiBubble]}
-          >
-            {msg.role === "assistant" && <Text style={styles.roleLabel}>Agent</Text>}
-            {/* textContent equivalent: Text component never executes scripts */}
-            <Text style={[styles.msgText, msg.role === "user" && styles.userText]}>{msg.content}</Text>
-            {msg.cards?.map((card, i) => (
-              <CardView
-                key={i}
-                card={card}
-                onConfirmRule={handleConfirmRule}
-                onCancelRule={handleCancelRule}
-                onApproveProposal={handleApproveProposal}
-                onRejectProposal={handleRejectProposal}
-                onAction={handleAction}
-              />
-            ))}
-          </View>
-        ))}
-        {loading && (toolName || messages[messages.length - 1]?.role === "user") && (
-          <View style={[styles.msgBubble, styles.aiBubble]}>
-            <ActivityIndicator size="small" color={c.primary} />
-            <Text style={styles.loadingText}>{toolName ? `Using ${toolName}…` : "Thinking…"}</Text>
+        {isEmpty && !loading ? (
+          <EmptyState onPick={sendMessage} />
+        ) : (
+          messages.map((msg) =>
+            msg.role === "user" ? (
+              <View key={msg.id} style={styles.userRow}>
+                <View style={styles.userBubble}>
+                  {/* Text never executes markup */}
+                  <Text style={styles.userText} selectable>{msg.content}</Text>
+                </View>
+              </View>
+            ) : (
+              <View key={msg.id} style={styles.aiRow}>
+                {!!msg.content && <Markdown text={msg.content} />}
+                {msg.cards?.map((card, i) => (
+                  <CardView
+                    key={i}
+                    card={card}
+                    onConfirmRule={handleConfirmRule}
+                    onCancelRule={handleCancelRule}
+                    onApproveProposal={handleApproveProposal}
+                    onRejectProposal={handleRejectProposal}
+                    onAction={handleAction}
+                  />
+                ))}
+              </View>
+            )
+          )
+        )}
+        {showThinking && (
+          <View style={styles.aiRow}>
+            <Thinking label={toolName ? `Using ${toolName}…` : "Thinking…"} />
           </View>
         )}
         {error && (
@@ -350,37 +407,29 @@ export default function ChatScreen() {
         )}
       </ScrollView>
 
-      {/* Quick chips */}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chips} contentContainerStyle={styles.chipsContent}>
-        {QUICK_CHIPS.map((chip) => (
-          <TouchableOpacity key={chip.label} style={styles.chip} onPress={() => sendMessage(chip.message)}>
-            <Text style={styles.chipText}>{chip.label}</Text>
+      {/* Composer */}
+      <View style={styles.composerWrap}>
+        <View style={styles.composer}>
+          <TextInput
+            style={styles.textInput}
+            value={input}
+            onChangeText={setInput}
+            placeholder="Message PRED Agent"
+            placeholderTextColor={c.placeholder}
+            keyboardAppearance={c.isDark ? "dark" : "light"}
+            underlineColorAndroid="transparent"
+            multiline
+            maxLength={4000}
+          />
+          <TouchableOpacity
+            style={[styles.sendBtn, !canSend && styles.sendBtnDisabled]}
+            onPress={() => sendMessage(input)}
+            disabled={!canSend}
+            accessibilityLabel="Send message"
+          >
+            <Icon name="send" size={20} color={canSend ? c.background : c.textMuted} strokeWidth={2.2} />
           </TouchableOpacity>
-        ))}
-      </ScrollView>
-
-      {/* Input row */}
-      <View style={styles.inputRow}>
-        <TextInput
-          style={styles.textInput}
-          value={input}
-          onChangeText={setInput}
-          placeholder="Chat in Bengali, Banglish or English…"
-          placeholderTextColor={c.placeholder}
-          keyboardAppearance={c.isDark ? "dark" : "light"}
-          multiline
-          maxLength={4000}
-          returnKeyType="send"
-          onSubmitEditing={() => { if (!loading) sendMessage(input); }}
-          blurOnSubmit
-        />
-        <TouchableOpacity
-          style={[styles.sendBtn, (!input.trim() || loading) && styles.sendBtnDisabled]}
-          onPress={() => sendMessage(input)}
-          disabled={!input.trim() || loading}
-        >
-          <Text style={styles.sendText}>Send</Text>
-        </TouchableOpacity>
+        </View>
       </View>
     </KeyboardAvoidingView>
   );
@@ -391,35 +440,43 @@ const makeStyles = (c: Colors) => StyleSheet.create({
   container: { flex: 1, backgroundColor: c.background },
   headerBtn: { width: 40, height: 40, borderRadius: radius.pill, alignItems: "center", justifyContent: "center", backgroundColor: c.surface, borderWidth: 1, borderColor: c.border },
   messages: { flex: 1 },
-  messagesContent: { padding: 12, gap: 10, paddingBottom: 8 },
-  msgBubble: { borderRadius: radius.lg, padding: 12, maxWidth: "88%" },
-  userBubble: { backgroundColor: c.primary, alignSelf: "flex-end", borderBottomRightRadius: 4 },
-  aiBubble: { backgroundColor: c.surface, alignSelf: "flex-start", borderColor: c.border, borderWidth: 1, borderBottomLeftRadius: 4 },
-  roleLabel: { fontSize: 10, color: c.textMuted, fontWeight: "800", letterSpacing: 0.6, textTransform: "uppercase", marginBottom: 4 },
-  msgText: { color: c.text, fontSize: 15, lineHeight: 21 },
-  userText: { color: c.onAccent },
-  loadingText: { color: c.textSecondary, fontSize: 13, marginTop: 4 },
-  errorBanner: { backgroundColor: c.shortSoft, borderRadius: radius.md, padding: 10, marginHorizontal: 4 },
+  messagesContent: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 12, gap: 20 },
+  messagesEmpty: { flexGrow: 1, justifyContent: "center" },
+
+  // user: right-aligned soft bubble; assistant: plain full-width text
+  userRow: { alignItems: "flex-end" },
+  userBubble: { maxWidth: "82%", backgroundColor: c.surfaceAlt, borderRadius: 20, paddingHorizontal: 16, paddingVertical: 10 },
+  userText: { color: c.text, fontSize: 16, lineHeight: 23 },
+  aiRow: { alignSelf: "stretch", gap: 10 },
+  thinkingRow: { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 4 },
+  thinkingDot: { width: 12, height: 12, borderRadius: 6, backgroundColor: c.text },
+  loadingText: { color: c.textSecondary, fontSize: 14 },
+  errorBanner: { backgroundColor: c.shortSoft, borderRadius: radius.md, padding: 10 },
   errorText: { color: c.short, fontSize: 13 },
 
-  chips: { maxHeight: 52, borderTopWidth: 1, borderTopColor: c.border },
-  chipsContent: { paddingHorizontal: 12, paddingVertical: 8, gap: 8 },
-  chip: { backgroundColor: c.surface, borderRadius: radius.pill, paddingHorizontal: 14, paddingVertical: 8, borderWidth: 1, borderColor: c.border },
-  chipText: { color: c.text, fontSize: 13, fontWeight: "600" },
+  // empty state
+  empty: { alignItems: "center", paddingHorizontal: 8, gap: 8 },
+  emptyLogo: { width: 60, height: 60, borderRadius: 30, backgroundColor: c.primarySoft, alignItems: "center", justifyContent: "center", marginBottom: 6 },
+  emptyTitle: { color: c.text, fontSize: 26, fontWeight: "700", letterSpacing: -0.4, textAlign: "center" },
+  emptySub: { color: c.textSecondary, fontSize: 14, lineHeight: 20, textAlign: "center", maxWidth: 320 },
+  suggestList: { flexDirection: "row", flexWrap: "wrap", justifyContent: "center", gap: 8, marginTop: 16 },
+  suggest: { backgroundColor: c.surface, borderRadius: radius.pill, paddingHorizontal: 16, paddingVertical: 10, borderWidth: 1, borderColor: c.border },
+  suggestText: { color: c.text, fontSize: 14, fontWeight: "600" },
 
-  inputRow: { flexDirection: "row", padding: 12, gap: 8, borderTopWidth: 1, borderTopColor: c.border, alignItems: "flex-end" },
-  textInput: { flex: 1, backgroundColor: c.inputBackground, color: c.text, borderRadius: radius.md, paddingHorizontal: 14, paddingVertical: 10, fontSize: 15, maxHeight: 110, borderWidth: 1, borderColor: c.border },
-  sendBtn: { backgroundColor: c.primary, borderRadius: radius.md, paddingHorizontal: 18, minHeight: 44, justifyContent: "center" },
-  sendBtnDisabled: { opacity: 0.4 },
-  sendText: { color: c.onAccent, fontSize: 15, fontWeight: "700" },
+  // composer
+  composerWrap: { paddingHorizontal: 12, paddingTop: 6, paddingBottom: 10 },
+  composer: { flexDirection: "row", alignItems: "flex-end", gap: 6, backgroundColor: c.surface, borderRadius: 26, borderWidth: 1, borderColor: c.border, paddingLeft: 18, paddingRight: 6, paddingVertical: 6 },
+  textInput: { flex: 1, color: c.text, fontSize: 16, maxHeight: 140, minHeight: 36, paddingTop: Platform.OS === "ios" ? 8 : 6, paddingBottom: Platform.OS === "ios" ? 8 : 6 },
+  sendBtn: { width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center", backgroundColor: c.text },
+  sendBtnDisabled: { backgroundColor: c.surfaceAlt },
 
-  // Cards
-  card: { marginTop: 8, borderRadius: radius.md, padding: 10, backgroundColor: c.background, borderWidth: 1, borderColor: c.border },
+  // Cards (rule / proposal / action / fixtures)
+  card: { borderRadius: 14, padding: 12, backgroundColor: c.surface, borderWidth: 1, borderColor: c.border },
   cardTitle: { fontSize: 10, color: c.textSecondary, fontWeight: "800", letterSpacing: 0.8, textTransform: "uppercase", marginBottom: 6 },
-  cardBody: { color: c.text, fontSize: 13, marginBottom: 4 },
+  cardBody: { color: c.text, fontSize: 14, marginBottom: 4 },
   cardMeta: { color: c.textSecondary, fontSize: 12 },
   cardActions: { flexDirection: "row", gap: 8, marginTop: 8 },
-  btn: { borderRadius: radius.sm, paddingHorizontal: 14, minHeight: 40, justifyContent: "center" },
+  btn: { borderRadius: radius.pill, paddingHorizontal: 16, minHeight: 40, justifyContent: "center" },
   btnOk: { backgroundColor: c.long },
   btnBad: { backgroundColor: c.short },
   btnText: { color: c.onAccent, fontSize: 13, fontWeight: "700" },

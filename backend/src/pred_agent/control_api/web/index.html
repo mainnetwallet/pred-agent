@@ -56,7 +56,7 @@ header.top .sub{color:var(--text2);font-size:12px;min-height:16px;white-space:no
 .panic:active{background:var(--short-soft)}
 .stale{margin:0 16px 10px;padding:9px 12px;border:1px solid var(--paused);background:var(--paused-bg);color:var(--paused);border-radius:12px;font-size:12px;font-weight:700}
 main#view{flex:1;overflow-y:auto;padding:0 16px 24px;overscroll-behavior:contain}
-main#view.chatmode{display:flex;flex-direction:column;overflow:hidden;padding-bottom:0}
+main#view.chatmode{display:flex;flex-direction:column;overflow:hidden;padding:0}
 nav#tabbar{display:grid;grid-template-columns:repeat(5,1fr);background:var(--tabbar);border-top:1px solid var(--line);padding:6px 0 calc(env(safe-area-inset-bottom,0px) + 6px)}
 .tab{position:relative;background:none;border:0;display:flex;flex-direction:column;align-items:center;gap:2px;color:var(--muted);font-size:11px;font-weight:700;padding:4px 0}
 .tab.active{color:var(--primary)}
@@ -116,18 +116,51 @@ input.mono{font-family:var(--mono)}
 .bigteams{display:flex;justify-content:space-between;gap:10px;text-align:center}
 .bigteams b{flex:1;font-size:16px}
 
-/* chat */
+/* chat (ChatGPT-style) */
 .chatwrap{flex:1;min-height:0;display:flex;flex-direction:column}
-.msgs{flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:10px;padding:2px 0 10px}
-.msg{max-width:86%;padding:10px 13px;border-radius:14px;word-wrap:break-word;white-space:pre-wrap}
-.msg.user{align-self:flex-end;background:var(--primary-soft);border-radius:14px 14px 4px 14px}
-.msg.assistant{align-self:flex-start;background:var(--surface);border:1px solid var(--line);border-radius:14px 14px 14px 4px}
-.msg .who{font-size:11px;color:var(--text2);margin-bottom:3px;white-space:normal}
-.chips{display:flex;gap:6px;overflow-x:auto;padding:4px 0 8px;flex:none}
-.chips button{background:var(--alt);border:1px solid var(--line);border-radius:999px;padding:6px 12px;font-size:13px;font-weight:600;white-space:nowrap}
-.inputrow{display:flex;gap:8px;align-items:flex-end;padding:8px 0 10px;border-top:1px solid var(--line);flex:none}
-.inputrow textarea{resize:none;min-height:42px;max-height:120px}
-.ccard{margin-top:8px;border:1px solid var(--line);border-radius:10px;padding:10px;background:var(--bg);white-space:normal}
+.msgs{flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:22px;padding:16px max(16px,calc((100% - 768px)/2)) 12px;overscroll-behavior:contain}
+.msg{min-width:0;overflow-wrap:anywhere}
+.msg.user{align-self:flex-end;max-width:min(82%,600px);background:var(--alt);border:1px solid var(--line);padding:10px 16px;border-radius:20px;white-space:pre-wrap}
+.msg.assistant{align-self:stretch;font-size:15.5px;line-height:1.6}
+.msg .body>:first-child{margin-top:0}.msg .body>:last-child{margin-bottom:0}
+.msg.assistant .body{white-space:normal}
+.body p{margin:0 0 .85em}
+.body ul,.body ol{margin:0 0 .85em;padding-left:1.45em}.body li{margin:.25em 0}
+.body .mdh{margin:1.1em 0 .4em;font-size:1.06em;font-weight:700}
+.body a{color:var(--primary)}
+.body strong{font-weight:700}
+.body code{font-family:var(--mono);font-size:.88em;background:var(--alt);border-radius:6px;padding:.12em .4em}
+.body hr{border:0;border-top:1px solid var(--line);margin:1em 0}
+.body .warn{color:var(--alert);font-size:13px}
+.codeblock{margin:0 0 .9em;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--input)}
+.codehead{display:flex;justify-content:space-between;align-items:center;padding:4px 6px 4px 12px;background:var(--alt);font-size:12px;color:var(--text2)}
+.codeblock pre{margin:0;padding:12px;overflow-x:auto;font-size:13px;line-height:1.5}
+.codeblock pre code{background:none;padding:0;font-size:inherit}
+.typing{display:flex;align-items:center;gap:10px;color:var(--text2);font-size:14px;padding:4px 0}
+.typing .dot{width:12px;height:12px;border-radius:50%;background:var(--text);animation:pulse 1.1s ease-in-out infinite}
+@keyframes pulse{0%,100%{transform:scale(.7);opacity:.5}50%{transform:scale(1.1);opacity:1}}
+.msg-tools{display:flex;gap:2px;margin:6px 0 0 -6px}
+.act{background:none;border:0;color:var(--muted);border-radius:8px;padding:6px;display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600}
+.act.sm{padding:3px 8px}
+.hero{margin:auto;text-align:center;padding:24px 8px;max-width:520px}
+.hero img{border-radius:14px}
+.hero h2{margin:14px 0 6px;font-size:26px;font-weight:700;letter-spacing:-.02em}
+.hero p{margin:0;color:var(--text2);font-size:14px}
+.chatwrap:not(.is-empty) .hero,.chatwrap:not(.is-empty) .suggest{display:none}
+.composer-zone{flex:none;display:flex;flex-direction:column;padding:6px max(12px,calc((100% - 768px)/2)) 8px}
+.suggest{order:-1;display:flex;gap:8px;overflow-x:auto;padding:2px 0 8px;scrollbar-width:none}
+.suggest button{flex:none;background:var(--surface);border:1px solid var(--line);border-radius:999px;padding:7px 14px;font-size:13px;font-weight:600;white-space:nowrap}
+.composer{display:flex;align-items:flex-end;gap:6px;background:var(--surface);border:1px solid var(--line);border-radius:26px;padding:6px 6px 6px 18px;box-shadow:0 2px 10px rgba(0,0,0,.12);transition:border-color .15s}
+.composer:focus-within{border-color:var(--text2)}
+.composer textarea{flex:1;width:auto;border:0;border-radius:0;background:none;resize:none;min-height:36px;max-height:200px;padding:8px 0;line-height:1.45}
+.composer textarea:focus-visible{outline:none}
+.sendbtn{flex:none;width:36px;height:36px;border-radius:50%;border:0;background:var(--text);color:var(--bg);display:flex;align-items:center;justify-content:center;padding:0}
+.sendbtn:disabled{background:var(--alt);color:var(--muted);opacity:1}
+.disclaimer{text-align:center;color:var(--muted);font-size:11px;padding-top:8px}
+.newchat{display:inline-flex;align-items:center;gap:6px;background:none;border:1px solid var(--line);border-radius:999px;padding:5px 11px;font-weight:700;font-size:12px;color:var(--text);white-space:nowrap}
+.newchat .nclabel{display:none}
+@media(min-width:660px){.newchat .nclabel{display:inline}}
+.ccard{margin-top:10px;border:1px solid var(--line);border-radius:14px;padding:12px;background:var(--surface);white-space:normal}
 .ccard h4{margin:0 0 6px;font-size:12px;color:var(--text2)}
 .ccard .actions{display:flex;gap:6px;margin-top:8px}
 .frow{padding:4px 0;border-bottom:1px solid var(--line);font-size:13px}.frow:last-child{border:0}
@@ -156,7 +189,10 @@ input.mono{font-family:var(--mono)}
   .card.tap:hover{border-color:var(--primary)}
   .btn:hover:not(:disabled){filter:brightness(1.12)}
   .tab:hover,.seg button:not(.on):hover{color:var(--text)}
-  .chips button:hover,.panic:hover{background:var(--alt)}
+  .panic:hover,.newchat:hover,.suggest button:hover{background:var(--alt)}
+  .act:hover{background:var(--alt);color:var(--text)}
+  .msg-tools{opacity:0;transition:opacity .15s}
+  .msg.assistant:hover .msg-tools,.msg-tools:focus-within{opacity:1}
 }
 
 /* desktop: sidebar nav + wide content */
@@ -179,13 +215,20 @@ input.mono{font-family:var(--mono)}
   [data-view=home] .span2{grid-column:1/-1}
   .hero-v{font-size:46px}
   .seg{max-width:440px}
-  .chatwrap{max-width:920px;margin:0 auto;width:100%}
-  .msg{max-width:min(86%,720px)}
+  #app.is-chat header.top{border-bottom:0;margin-bottom:0;padding:16px 24px 8px}
+  #app.is-chat header.top h1{font-size:18px}
+  #app.is-chat header.top .sub{display:none}
+  .hero h2{font-size:32px}
+  .composer-zone{padding-bottom:18px}
+  .suggest{order:0;flex-wrap:wrap;justify-content:center;overflow:visible;padding:16px 0 0}
+  .chatwrap.is-empty{justify-content:center}
+  .chatwrap.is-empty .msgs{flex:none;overflow:visible;padding-bottom:20px}
+  .chatwrap.is-empty .hero{margin:0 auto}
   .scrim{align-items:center}
   .sheet{max-width:460px;border-radius:18px}
   .toast{bottom:28px;left:calc(50% + 124px)}
 }
-@media(prefers-reduced-motion:reduce){.toast{transition:none}}
+@media(prefers-reduced-motion:reduce){.toast{transition:none}.typing .dot{animation:none}}
 </style>
 </head>
 <body>
@@ -202,6 +245,7 @@ input.mono{font-family:var(--mono)}
   <header class="top">
     <button id="backBtn" class="iconbtn hidden" aria-label="Back"></button>
     <div class="titles"><h1 id="title">PRED Agent</h1><div id="sub" class="sub"></div></div>
+    <button id="newChat" class="newchat hidden" title="New chat"><span id="newChatIc" style="display:flex"></span><span class="nclabel">New chat</span></button>
     <span id="modePill" class="pill hidden"></span>
     <button id="panicTop" class="panic" aria-label="Panic"><span id="panicIc"></span>Panic</button>
   </header>
@@ -253,6 +297,11 @@ const ICONS = {
   back: '<path d="m14.5 5.5-6.5 6.5 6.5 6.5"/>',
   chevron: '<path d="m9.5 5.5 6.5 6.5-6.5 6.5"/>',
   logout: '<path d="M10 4.5H5.5v15H10"/><path d="M14 8.5 18 12l-4 3.5M18 12H9.5"/>',
+  send: '<path d="M12 19V5"/><path d="m5.5 11.5 6.5-6.5 6.5 6.5"/>',
+  stop: '<rect x="7" y="7" width="10" height="10" rx="2.2" fill="currentColor" stroke="none"/>',
+  copy: '<rect x="8.5" y="8.5" width="11" height="11" rx="2.2"/><path d="M15.5 8.5V6.7a2.2 2.2 0 0 0-2.2-2.2H6.7a2.2 2.2 0 0 0-2.2 2.2v6.6a2.2 2.2 0 0 0 2.2 2.2h1.8"/>',
+  check: '<path d="m5 12.5 4.5 4.5L19 7.5"/>',
+  compose: '<path d="M12 5H6.5A1.5 1.5 0 0 0 5 6.5v11A1.5 1.5 0 0 0 6.5 19h11a1.5 1.5 0 0 0 1.5-1.5V12"/><path d="m17.5 4.5 2 2L11 15l-3 1 1-3z"/>',
 };
 function icon(name, size) {
   const s = document.createElementNS(NS, "svg");
@@ -391,6 +440,8 @@ function buildChrome() {
   $("tabbar").append(el("div", { class: "side-foot" }, el("button", { class: "btn ghost block", onclick: () => { if (confirm("Sign out of this browser?")) logout(); } }, icon("logout", 18), "Log out")));
   $("backBtn").append(icon("back", 24));
   $("panicIc").append(icon("panic", 15));
+  $("newChatIc").append(icon("compose", 18));
+  $("newChat").onclick = newChat;
   $("panicIc").style.display = "flex";
 }
 function go(tab) { S.tab = tab; S.detail = null; render(); }
@@ -404,6 +455,8 @@ function render() {
   TABS.forEach(([k]) => $("tab-" + k).classList.toggle("active", k === S.tab));
   $("backBtn").classList.toggle("hidden", !d);
   v.classList.toggle("chatmode", !d && S.tab === "chat");
+  $("app").classList.toggle("is-chat", !d && S.tab === "chat");
+  $("newChat").classList.toggle("hidden", !(!d && S.tab === "chat"));
   v.replaceChildren(); v.scrollTop = 0; v.dataset.view = d ? d.kind : S.tab;
   if (d) VIEWS[d.kind](v, d); else VIEWS[S.tab](v);
   paintStatus();
@@ -679,35 +732,136 @@ VIEWS.settings = (v) => {
 };
 
 // ── Chat (built once, kept alive across tab switches) ──
+const SUGGESTIONS = [["🟢 Live matches", "ekhon live match ki ki ache?"], ["🕐 Upcoming", "upcoming match gulo dekhao"], ["📊 Positions", "আমার positions দেখাও"], ["📋 Rules", "sob rules dekhao"], ["⚙️ Status", "/status"]];
+const coarsePointer = () => !!(window.matchMedia && matchMedia("(pointer:coarse)").matches);
 function buildChat() {
   const box = el("div", { class: "msgs" });
-  const input = el("textarea", { placeholder: "Chat in Bengali, Banglish or English…", rows: 1, enterKeyHint: "send" });
-  const send = el("button", { class: "btn primary", textContent: "Send" });
-  const status = el("div", { class: "note", style: "min-height:16px" });
-  const chips = [["🟢 Live", "ekhon live match ki ki ache?"], ["🕐 Upcoming", "upcoming match gulo dekhao"], ["📊 Positions", "আমার positions দেখাও"], ["📋 Rules", "sob rules dekhao"], ["⚙️ Status", "/status"]];
-  const wrap = el("div", { class: "chatwrap" }, box,
-    el("div", { class: "chips" }, chips.map(([l, t]) => el("button", { textContent: l, onclick: () => sendChatMessage(t) }))),
-    status,
-    el("div", { class: "inputrow" }, input, send, el("button", { class: "btn ghost", textContent: "Clear", title: "Clear chat", onclick: clearChat })));
-  chat = { wrap, box, input, send, status };
-  send.onclick = () => sendChatMessage(input.value);
-  input.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendChatMessage(input.value); } });
-  appendChatMsg("assistant", "Assalamu Alaikum! 🏟️ PRED Agent here. আমি বাংলা, Banglish বা English এ কথা বলতে পারি।\n\nজিজ্ঞেস করুন: live match, positions, rules, বা trade/rule তৈরির জন্য।");
+  const hero = el("div", { class: "hero" },
+    el("img", { src: "/icon.svg", width: 56, height: 56, alt: "" }),
+    el("h2", { textContent: "What can I help with?" }),
+    el("p", { textContent: "Ask about live matches, positions or exit rules — in বাংলা, Banglish or English." }));
+  box.append(hero);
+  const input = el("textarea", { placeholder: "Message PRED Agent", rows: 1, enterKeyHint: "send", maxLength: 4000 });
+  const send = el("button", { class: "sendbtn" });
+  const suggest = el("div", { class: "suggest" }, SUGGESTIONS.map(([l, t]) => el("button", { textContent: l, onclick: () => sendChatMessage(t) })));
+  const zone = el("div", { class: "composer-zone" }, el("div", { class: "composer" }, input, send), suggest,
+    el("div", { class: "disclaimer", textContent: "PRED Agent can make mistakes. Verify before approving." }));
+  const wrap = el("div", { class: "chatwrap is-empty" }, box, zone);
+  chat = { wrap, box, hero, input, send, busy: false, abort: null };
+  send.onclick = () => { if (chat.busy) { if (chat.abort) chat.abort.abort(); } else sendChatMessage(input.value); };
+  input.addEventListener("input", () => { autosize(); chatUi(); });
+  // Enter sends on desktop; on touch keyboards Enter makes a new line (use the send button).
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !e.shiftKey && !e.isComposing && !coarsePointer()) { e.preventDefault(); if (!chat.busy) sendChatMessage(input.value); }
+  });
+  chatUi();
 }
-async function clearChat() {
-  if (chatSessionId) { await api("/v1/chat/" + encodeURIComponent(chatSessionId), { method: "DELETE" }); chatSessionId = null; }
-  chat.box.replaceChildren(); appendChatMsg("assistant", "Chat cleared. How can I help?");
+function autosize() {
+  if (!chat) return;
+  const i = chat.input; i.style.height = "auto"; i.style.height = Math.min(i.scrollHeight, 200) + "px";
+}
+function chatUi() {
+  if (!chat) return;
+  const has = chat.input.value.trim().length > 0;
+  chat.send.replaceChildren(icon(chat.busy ? "stop" : "send", chat.busy ? 18 : 20));
+  chat.send.disabled = !chat.busy && !has;
+  chat.send.title = chat.send.ariaLabel = chat.busy ? "Stop generating" : "Send message";
+  chat.wrap.classList.toggle("is-empty", !chat.box.querySelector(".msg"));
+}
+async function newChat() {
+  if (!chat) return;
+  if (chat.busy && chat.abort) chat.abort.abort();
+  if (chatSessionId) { const sid = chatSessionId; chatSessionId = null; await api("/v1/chat/" + encodeURIComponent(sid), { method: "DELETE" }); }
+  chat.box.replaceChildren(chat.hero); chat.input.value = ""; autosize(); chatUi(); chat.input.focus();
 }
 VIEWS.chat = (v) => {
-  setHead("Chat", "Ask the agent anything");
+  setHead("Chat", "");
   if (!chat) buildChat();
   v.append(chat.wrap);
+  autosize(); chatUi();
   chat.box.scrollTop = chat.box.scrollHeight;
 };
+async function copyText(t) {
+  try { await navigator.clipboard.writeText(t); return true; } catch (_) {}
+  try { const ta = el("textarea", { value: t, style: "position:fixed;opacity:0" }); document.body.append(ta); ta.select(); const ok = document.execCommand("copy"); ta.remove(); return ok; } catch (_) { return false; }
+}
+// Copy button that flips to a check mark for a moment.
+function copyBtn(cls, label, getText) {
+  const idle = () => [icon("copy", label ? 14 : 16), label ? " " + label : null];
+  const b = el("button", { class: cls, title: "Copy" }, idle());
+  b.onclick = async () => {
+    const ok = await copyText(getText());
+    b.replaceChildren(...[icon(ok ? "check" : "copy", label ? 14 : 16), label ? (ok ? " Copied" : " Copy") : null].filter(Boolean));
+    setTimeout(() => b.replaceChildren(...idle().filter(Boolean)), 1500);
+  };
+  return b;
+}
+function addTools(msg, getText) { msg.append(el("div", { class: "msg-tools" }, copyBtn("act", "", getText))); }
+
+// ── Markdown-lite for replies: built with DOM nodes + textContent only (no innerHTML) ──
+function mdInline(parent, s) {
+  const re = /`([^`\n]+)`|\*\*([^*\n]+?)\*\*|\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/g;
+  const txt = (t) => t.split("\n").forEach((part, i) => { if (i) parent.append(el("br")); if (part) parent.append(part); });
+  let last = 0, m;
+  while ((m = re.exec(s)) !== null) {
+    if (m.index > last) txt(s.slice(last, m.index));
+    if (m[1] !== undefined) parent.append(el("code", { textContent: m[1] }));
+    else if (m[2] !== undefined) parent.append(el("strong", { textContent: m[2] }));
+    else { const u = safeUrl(m[4]); parent.append(u ? el("a", { href: u, target: "_blank", rel: "noopener noreferrer", textContent: m[3] }) : m[3]); }
+    last = m.index + m[0].length;
+  }
+  if (last < s.length) txt(s.slice(last));
+}
+function renderMd(root, src) {
+  const lines = String(src).replace(/\r\n?/g, "\n").split("\n"), out = [];
+  let para = [], list = null;
+  const flushP = () => { if (para.length) { const p = el("p"); mdInline(p, para.join("\n")); out.push(p); para = []; } };
+  const flushL = () => {
+    if (!list) return;
+    const l = el(list.tag); if (list.start > 1) l.start = list.start;
+    list.items.forEach((t) => { const li = el("li"); mdInline(li, t); l.append(li); });
+    out.push(l); list = null;
+  };
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const fence = /^\s*```\s*([\w+-]*)\s*$/.exec(line);
+    if (fence) {
+      flushP(); flushL();
+      const code = [];
+      for (i++; i < lines.length && !/^\s*```\s*$/.test(lines[i]); i++) code.push(lines[i]); // unclosed fence = still streaming
+      const text = code.join("\n");
+      out.push(el("div", { class: "codeblock" }, el("div", { class: "codehead" }, el("span", { textContent: fence[1] || "code" }), copyBtn("act sm", "Copy", () => text)), el("pre", {}, el("code", { textContent: text }))));
+      continue;
+    }
+    if (/^\s*$/.test(line)) { flushP(); flushL(); continue; }
+    if (/^\s*([-*_])(?:\s*\1){2,}\s*$/.test(line)) { flushP(); flushL(); out.push(el("hr")); continue; }
+    const h = /^(#{1,6})\s+(.+?)\s*$/.exec(line);
+    if (h) { flushP(); flushL(); const hd = el("div", { class: "mdh" }); mdInline(hd, h[2]); out.push(hd); continue; }
+    const ul = /^\s*[-*•]\s+(.*)$/.exec(line), ol = /^\s*(\d+)[.)]\s+(.*)$/.exec(line);
+    if (ul || ol) {
+      flushP();
+      const tag = ul ? "ul" : "ol";
+      if (list && list.tag !== tag) flushL();
+      if (!list) list = { tag, start: ol ? parseInt(ol[1], 10) : 1, items: [] };
+      list.items.push((ul ? ul[1] : ol[2]).trim());
+      continue;
+    }
+    if (list && /^\s+\S/.test(line)) { list.items[list.items.length - 1] += "\n" + line.trim(); continue; }
+    flushL(); para.push(line);
+  }
+  flushP(); flushL();
+  root.replaceChildren(...out);
+}
+
+// A message: .body (text) + .cardsbox (rule/proposal cards). Assistant text is markdown; user text is plain.
 function appendChatMsg(role, text, cards) {
-  const msg = el("div", { class: "msg " + role }, el("div", { class: "who", textContent: role === "user" ? "You" : "Agent" }), el("div", { textContent: text }));
-  (cards || []).forEach((c) => { const ce = renderCard(c); if (ce) msg.append(ce); });
-  chat.box.append(msg); chat.box.scrollTop = chat.box.scrollHeight;
+  const body = el("div", { class: "body" }), cardsbox = el("div", { class: "cardsbox" });
+  const msg = el("div", { class: "msg " + role }, body, role === "user" ? null : cardsbox);
+  if (role === "user") body.textContent = text; else if (text) renderMd(body, text);
+  (cards || []).forEach((c) => { const ce = renderCard(c); if (ce) cardsbox.append(ce); });
+  if (role === "assistant" && text) addTools(msg, () => text);
+  chat.box.append(msg); chat.box.scrollTop = chat.box.scrollHeight; chatUi();
+  return msg;
 }
 function renderCard(card) {
   const wrap = el("div", { class: "ccard" });
@@ -757,20 +911,29 @@ function renderCard(card) {
   return null;
 }
 async function sendChatMessage(text) {
-  if (!text || !text.trim() || !chat || chat.send.disabled) return;
+  if (!text || !text.trim() || !chat || chat.busy) return;
+  text = text.trim();
   appendChatMsg("user", text);
-  chat.input.value = ""; chat.send.disabled = true; chat.status.textContent = "Thinking…";
-  appendChatMsg("assistant", "");
-  const box = chat.box, bubble = box.lastElementChild, body = bubble.children[1];
-  let acc = "", finished = false;
-  const finish = () => { chat.send.disabled = false; chat.status.textContent = ""; };
+  chat.input.value = ""; autosize();
+  const bubble = appendChatMsg("assistant", ""), body = bubble.querySelector(".body"), cardsbox = bubble.querySelector(".cardsbox"), box = chat.box;
+  const typing = el("div", { class: "typing" }, el("i", { class: "dot" }), el("span", { textContent: "Thinking…" }));
+  bubble.append(typing);
+  const ctl = new AbortController();
+  chat.busy = true; chat.abort = ctl; chatUi();
+  let acc = "", copyable = "", finished = false;
+  // keep following the stream only while the reader is near the bottom
+  const upd = (fn) => { const near = box.scrollHeight - box.scrollTop - box.clientHeight < 120; fn(); if (near) box.scrollTop = box.scrollHeight; };
+  const finish = () => {
+    typing.remove(); chat.busy = false; chat.abort = null; chatUi();
+    if (copyable) addTools(bubble, () => copyable);
+  };
   const fail = (m) => { body.textContent = m; finish(); };
   let resp;
   try {
     const headers = { "Content-Type": "application/json" };
     if (token) headers.Authorization = "Bearer " + token;
-    resp = await fetch("/v1/chat/stream", { method: "POST", headers, body: JSON.stringify({ message: text, session_id: chatSessionId }) });
-  } catch (_) { return fail("❌ Cannot reach the server."); }
+    resp = await fetch("/v1/chat/stream", { method: "POST", headers, signal: ctl.signal, body: JSON.stringify({ message: text, session_id: chatSessionId }) });
+  } catch (e) { return fail(e && e.name === "AbortError" ? "Stopped." : "❌ Cannot reach the server."); }
   if (resp.status === 401 && token) { signOut(); return; }
   if (!resp.ok || !resp.body) {
     let err = {}; try { err = (await resp.json()).error || {}; } catch (_) {}
@@ -779,17 +942,16 @@ async function sendChatMessage(text) {
   }
   const handle = (event, d) => {
     if (event === "session") { if (!chatSessionId) chatSessionId = d.session_id; }
-    else if (event === "delta") { acc += d.text; body.textContent = acc; chat.status.textContent = ""; box.scrollTop = box.scrollHeight; }
-    else if (event === "tool") chat.status.textContent = "Using tool: " + (d.name || "…");
-    else if (event === "reset") { acc = ""; body.textContent = ""; }
-    else if (event === "cards") { (d.cards || []).forEach((c) => { const ce = renderCard(c); if (ce) bubble.append(ce); }); box.scrollTop = box.scrollHeight; }
+    else if (event === "delta") { acc += d.text; typing.remove(); upd(() => renderMd(body, acc)); }
+    else if (event === "tool") { typing.lastChild.textContent = "Using tool: " + (d.name || "…"); if (!typing.isConnected) bubble.append(typing); }
+    else if (event === "reset") { acc = ""; renderMd(body, ""); }
+    else if (event === "cards") upd(() => (d.cards || []).forEach((c) => { const ce = renderCard(c); if (ce) cardsbox.append(ce); }));
     else if (event === "done") {
-      finished = true;
+      finished = true; typing.remove();
       if (d.session_id && !chatSessionId) chatSessionId = d.session_id;
       if (d.error === "llm_not_configured") body.textContent = "⚠️ LLM কনফিগার করা নেই। সার্ভারে LLM_API_KEY এবং LLM_MODEL সেট করুন।";
       else if (d.error) body.textContent = "❌ " + (d.reply || "Error occurred.");
-      else body.textContent = d.reply || acc;
-      box.scrollTop = box.scrollHeight;
+      else { copyable = d.reply || acc; upd(() => renderMd(body, copyable)); }
     }
   };
   try {
@@ -810,7 +972,14 @@ async function sendChatMessage(text) {
         try { handle(ev, JSON.parse(data)); } catch (_) {}
       }
     }
-  } catch (_) { if (!finished) body.textContent = (acc ? acc + "\n\n" : "") + "⚠️ Connection lost."; }
+  } catch (e) {
+    if (!finished) {
+      const stopped = e && e.name === "AbortError";
+      if (acc) { copyable = acc; if (!stopped) body.append(el("p", { class: "warn", textContent: "⚠️ Connection lost." })); }
+      else body.textContent = stopped ? "Stopped." : "⚠️ Connection lost.";
+      finished = true;
+    }
+  }
   if (!finished && !acc) body.textContent = "⚠️ No reply received.";
   finish();
 }

@@ -22,7 +22,9 @@ export type IconName =
   | "chevron"
   | "refresh"
   | "trash"
-  | "logout";
+  | "logout"
+  | "send"
+  | "compose";
 
 export const Icon: React.FC<{ name: IconName; size?: number; color: string; strokeWidth?: number }> = ({
   name,
@@ -87,6 +89,18 @@ export const Icon: React.FC<{ name: IconName; size?: number; color: string; stro
         <>
           <Path d="M4.5 7h15M9.5 7V4.5h5V7" {...p} />
           <Rect x="6.5" y="7" width="11" height="13" rx="1.5" {...p} />
+        </>
+      )}
+      {name === "send" && (
+        <>
+          <Path d="M12 19V5" {...p} />
+          <Path d="m5.5 11.5 6.5-6.5 6.5 6.5" {...p} />
+        </>
+      )}
+      {name === "compose" && (
+        <>
+          <Path d="M12 5H6.5A1.5 1.5 0 0 0 5 6.5v11A1.5 1.5 0 0 0 6.5 19h11a1.5 1.5 0 0 0 1.5-1.5V12" {...p} />
+          <Path d="m17.5 4.5 2 2L11 15l-3 1 1-3z" {...p} />
         </>
       )}
       {name === "logout" && (

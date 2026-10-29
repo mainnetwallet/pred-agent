@@ -46,3 +46,17 @@ def test_index_has_desktop_layout():
     assert "@media(min-width:960px)" in html
     assert 'class: "brand"' in html and 'class: "side-foot"' in html
     assert "grid-template-areas" in html
+
+
+def test_chat_is_chatgpt_style():
+    html = INDEX.read_text(encoding="utf-8")
+    # rounded composer with a round send/stop button, centered empty state, new-chat action
+    for marker in (".composer{", ".sendbtn{", 'class: "hero"', "What can I help with?", 'id="newChat"', "async function newChat("):
+        assert marker in html, marker
+    # replies are rendered as markdown via DOM nodes, never innerHTML with model text
+    assert "function renderMd(" in html
+    assert "AbortController" in html  # stop generating
+    # the old "Agent" label bubbles and Clear button are gone
+    assert 'textContent: "Clear"' not in html
+    assert 'class: "who"' not in html
+
