@@ -20,6 +20,20 @@ the mobile app). On a phone, open it in the browser and choose **Add to Home Scr
 full-screen like an app. On a desktop (window wider than 960 px) it switches to a sidebar layout
 with multi-column pages; keys `1`–`5` jump between tabs and `Esc` goes back.
 
+### Control everything by click or by typing
+
+Every action in the website/app can also be typed in **Chat** as a `/command` (handled by the server,
+not the LLM). Type `/help` for the list: `/status /live /upcoming /match /positions /orders /rules
+/proposals /limits`, `/buy <market> <usd>`, `/sell <market> <usd>`, `/close <market>`,
+`/tp <market> <5|20%|70c>`, `/sl <market> <3|30c>`, `/approve <id>`, `/reject <id>`, `/confirm <rule>`,
+`/cancel <order|rule>`, `/pause`, `/resume`, `/panic`, `/limit <name> <value>`. Ids can be shortened to a
+unique prefix. Trades and rules are created **PENDING** and need an approve/confirm; in LIVE mode
+approve/confirm/cancel-order show a confirm card instead of executing from one line, and `/panic`
+always asks for confirmation. By click: the match page has **Buy YES / Buy NO**, each position has an
+**Auto-exit** (take-profit / stop-loss) form.
+
+---
+
 ## 1. Start the agent
 
 ```bash

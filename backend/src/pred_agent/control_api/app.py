@@ -29,6 +29,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingRes
 from pred_agent.book import BookAnalyzer
 from pred_agent.config import load_settings
 from pred_agent.control_api.auth import DeviceAuth
+from pred_agent.control_api.commands import CommandContext, is_command, run_command
 from pred_agent.control_api.controller import AgentController, to_jsonable
 from pred_agent.control_api.session import LoginManager
 from pred_agent.events import Event, EventBus
@@ -630,6 +631,9 @@ def create_app(*, background: bool = False) -> FastAPI:  # noqa: PLR0915
         async def _get_limits() -> dict[str, Any]:
             return {"limits": controller.limits_list()}
 
+        async def _get_proposals() -> dict[str, Any]:
+            return {"proposals": to_jsonable(controller.list_proposals("PROPOSED"))}
+
         # ── write-intent tools (create PENDING objects or confirmation cards ONLY) ──
 
         async def _propose_trade(market_id: str, side: str, amount_usd: str) -> tuple[dict[str, Any], list[Card]]:
@@ -717,6 +721,10 @@ def create_app(*, background: bool = False) -> FastAPI:  # noqa: PLR0915
             card = Card("action", {"action": "pause", "label": "Pause the agent (block new entries)?"})
             return {"card_created": "pause"}, [card]
 
+        async def _request_resume() -> tuple[dict[str, Any], list[Card]]:
+            card = Card("action", {"action": "resume", "label": "Resume the agent (allow new proposals)?"})
+            return {"card_created": "resume"}, [card]
+
         async def _request_panic() -> tuple[dict[str, Any], list[Card]]:
             card = Card("action", {
                 "action": "panic",
@@ -801,6 +809,12 @@ def create_app(*, background: bool = False) -> FastAPI:  # noqa: PLR0915
                 fn=_get_limits,
             ),
             Tool(
+                name="get_proposals",
+                description="Get the trade proposals currently PENDING the human's approval.",
+                parameters={"type": "object", "properties": {}, "required": []},
+                fn=_get_proposals,
+            ),
+            Tool(
                 name="propose_trade",
                 description=(
                     "Create a PENDING trade proposal card for the human to approve. "
@@ -881,6 +895,12 @@ def create_app(*, background: bool = False) -> FastAPI:  # noqa: PLR0915
                 fn=_request_pause,
             ),
             Tool(
+                name="request_resume",
+                description="Create a confirmation card to resume the agent. Never resumes directly.",
+                parameters={"type": "object", "properties": {}, "required": []},
+                fn=_request_resume,
+            ),
+            Tool(
                 name="request_panic",
                 description="Create a confirmation card to trigger PANIC. Never triggers it directly.",
                 parameters={"type": "object", "properties": {}, "required": []},
@@ -898,6 +918,18 @@ def create_app(*, background: bool = False) -> FastAPI:  # noqa: PLR0915
         )
 
     _chat_llm = _make_chat_llm()  # type: ignore[no-untyped-call]
+
+    # ── Slash commands (typed equivalents of every button) ─────
+
+    async def _run_slash(message: str, x_confirm: str | None) -> Any:
+        ctx = CommandContext(
+            controller=controller,
+            fixtures=lambda state: fixture_cache.list(state),
+            tool_fns=getattr(app.state, "chat_tool_fns", {}),
+            publish=bus.publish,
+            xconfirmed=bool(x_confirm),
+        )
+        return await run_command(message, ctx)
 
     # ── Health ────────────────────────────────────────────────
 
@@ -1029,6 +1061,24 @@ def create_app(*, background: bool = False) -> FastAPI:  # noqa: PLR0915
         if _verify_auth(authorization) is None:
             return _unauth()
         return envelope(ok=True, data=to_jsonable(controller.list_proposals(status)))
+
+    @app.post("/v1/proposals")
+    async def create_proposal(body: dict[str, Any], authorization: str | None = Header(None)) -> Any:
+        """Manual trade by click: creates a PENDING proposal (never executes).
+        The human then approves/rejects it exactly like an agent proposal."""
+        if _verify_auth(authorization) is None:
+            return _unauth()
+        market_id = str(body.get("market_id", "")).strip()
+        if not market_id:
+            return error_response("bad_request", "market_id is required", 400)
+        fn = app.state.chat_tool_fns["propose_trade"]
+        out, cards = await fn(market_id=market_id, side=str(body.get("side", "")),
+                              amount_usd=str(body.get("amount_usd", "")))
+        if "error" in out or not cards:
+            return error_response("not_proposable", out.get("error", "could not create proposal"), 409)
+        data = cards[0].data
+        await bus.publish(Event("proposal_created", data))
+        return envelope(ok=True, data=data)
 
     @app.post("/v1/proposals/{proposal_id}/approve")
     async def approve(proposal_id: str, body: dict[str, Any] | None = None,
@@ -1189,6 +1239,26 @@ def create_app(*, background: bool = False) -> FastAPI:  # noqa: PLR0915
         rules = controller.list_rules(status)
         return envelope(ok=True, data=[r.to_dict() for r in rules])
 
+    @app.post("/v1/rules")
+    async def create_rule(body: dict[str, Any], authorization: str | None = Header(None)) -> Any:
+        """TP/SL by click: creates a PENDING exit rule (confirm separately)."""
+        if _verify_auth(authorization) is None:
+            return _unauth()
+        market_id = str(body.get("market_id", "")).strip()
+        if not market_id:
+            return error_response("bad_request", "market_id is required", 400)
+        fn = app.state.chat_tool_fns["create_rule"]
+        out, cards = await fn(
+            market_id=market_id, kind=str(body.get("kind", "")),
+            trigger_type=str(body.get("trigger_type", "")),
+            trigger_value=str(body.get("trigger_value", "")),
+            size=str(body.get("size") or "all"),
+        )
+        if "error" in out or not cards:
+            return error_response("bad_rule", out.get("error", "could not create rule"), 400)
+        await bus.publish(Event("rule_updated", cards[0].data))
+        return envelope(ok=True, data=cards[0].data)
+
     @app.post("/v1/rules/{rule_id}/confirm")
     async def confirm_rule(rule_id: str, authorization: str | None = Header(None),
                            x_confirm: str | None = Header(None, alias="X-Confirm")) -> Any:
@@ -1217,7 +1287,8 @@ def create_app(*, background: bool = False) -> FastAPI:  # noqa: PLR0915
 
     @app.post("/v1/chat")
     async def chat(body: dict[str, Any], request: Request,  # noqa: PLR0911
-                   authorization: str | None = Header(None)) -> Any:
+                   authorization: str | None = Header(None),
+                   x_confirm: str | None = Header(None, alias="X-Confirm")) -> Any:
         actor = _verify_auth(authorization)
         if actor is None:
             return _unauth()
@@ -1234,6 +1305,12 @@ def create_app(*, background: bool = False) -> FastAPI:  # noqa: PLR0915
 
         session_id = body.get("session_id")
         sid, history = chat_sessions.get_or_create(session_id, actor)
+
+        if is_command(message):
+            res = await _run_slash(message, x_confirm)
+            chat_sessions.append(sid, ChatMessage(role="user", content=message))
+            chat_sessions.append(sid, ChatMessage(role="assistant", content=res.reply))
+            return envelope(ok=True, data={"session_id": sid, "reply": res.reply, "cards": res.cards})
 
         try:
             response = await _chat_llm.chat(history, message)
@@ -1263,7 +1340,8 @@ def create_app(*, background: bool = False) -> FastAPI:  # noqa: PLR0915
 
     @app.post("/v1/chat/stream")
     async def chat_stream(body: dict[str, Any], request: Request,  # noqa: PLR0911
-                          authorization: str | None = Header(None)) -> Any:
+                          authorization: str | None = Header(None),
+                          x_confirm: str | None = Header(None, alias="X-Confirm")) -> Any:
         """Same as POST /v1/chat but streamed as Server-Sent Events.
 
         Events: ``session`` {session_id}, ``delta`` {text}, ``tool`` {name},
@@ -1290,6 +1368,16 @@ def create_app(*, background: bool = False) -> FastAPI:  # noqa: PLR0915
 
         async def _gen() -> Any:
             yield _sse("session", {"session_id": sid})
+            if is_command(message):
+                res = await _run_slash(message, x_confirm)
+                chat_sessions.append(sid, ChatMessage(role="user", content=message))
+                chat_sessions.append(sid, ChatMessage(role="assistant", content=res.reply))
+                yield _sse("delta", {"text": res.reply})
+                if res.cards:
+                    yield _sse("cards", {"cards": res.cards})
+                yield _sse("done", {"session_id": sid, "reply": res.reply, "cards": res.cards,
+                                    "error": None})
+                return
             final: dict[str, Any] | None = None
             try:
                 async for ev in _chat_llm.chat_stream(history, message):

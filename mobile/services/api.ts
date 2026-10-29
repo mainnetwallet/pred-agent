@@ -126,6 +126,26 @@ class ApiClient {
     });
   }
 
+  /** Manual trade by tap: creates a PENDING proposal (nothing is placed until approved). */
+  async createProposal(body: {
+    market_id: string;
+    side: "long" | "short";
+    amount_usd: string;
+  }): Promise<ApiEnvelope<Proposal>> {
+    return this.request<Proposal>("/v1/proposals", { method: "POST", body: JSON.stringify(body) });
+  }
+
+  /** Exit rule (take-profit / stop-loss) by tap: creates a PENDING rule to confirm. */
+  async createRule(body: {
+    market_id: string;
+    kind: "take_profit" | "stop_loss";
+    trigger_type: "profit_usd" | "loss_usd" | "price_cents" | "profit_pct";
+    trigger_value: string;
+    size?: string;
+  }): Promise<ApiEnvelope<Rule>> {
+    return this.request<Rule>("/v1/rules", { method: "POST", body: JSON.stringify(body) });
+  }
+
   // ── Orders ────────────────────────────────────────────────
   async getOrders(): Promise<ApiEnvelope<Order[]>> {
     return this.request<Order[]>("/v1/orders");
