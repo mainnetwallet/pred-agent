@@ -24,7 +24,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, Header, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
 
 from pred_agent.book import BookAnalyzer
 from pred_agent.config import load_settings
@@ -43,6 +43,28 @@ from pred_agent.store.session import create_session_manager
 log = logging.getLogger(__name__)
 
 _WEB_INDEX = Path(__file__).parent / "web" / "index.html"
+
+# PWA bits so the website can be installed to the home screen and behave like the app.
+_WEB_MANIFEST = {
+    "name": "PRED Agent",
+    "short_name": "PRED Agent",
+    "description": "Human-in-the-loop sports trading assistant",
+    "start_url": "/",
+    "scope": "/",
+    "display": "standalone",
+    "orientation": "portrait",
+    "background_color": "#0B0F14",
+    "theme_color": "#0B0F14",
+    "icons": [{"src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable"}],
+}
+_WEB_ICON_SVG = (
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">'
+    '<rect width="512" height="512" fill="#0B0F14"/>'
+    '<path d="M96 368V144M96 368h320" fill="none" stroke="#2A3644" stroke-width="20" stroke-linecap="round"/>'
+    '<path d="m140 300 80-96 64 56 104-124" fill="none" stroke="#22C55E" stroke-width="28" '
+    'stroke-linecap="round" stroke-linejoin="round"/>'
+    '<circle cx="388" cy="136" r="22" fill="#60A5FA"/></svg>'
+)
 
 # ─────────────────────────────────────────────────────────────
 # game_status: known live signals (fail-closed — unknown = not live)
@@ -924,6 +946,14 @@ def create_app(*, background: bool = False) -> FastAPI:  # noqa: PLR0915
     @app.api_route("/", methods=["GET", "HEAD"], response_class=HTMLResponse)
     async def index() -> Any:
         return HTMLResponse(_WEB_INDEX.read_text(encoding="utf-8"))
+
+    @app.get("/manifest.webmanifest")
+    async def web_manifest() -> Any:
+        return JSONResponse(_WEB_MANIFEST, media_type="application/manifest+json")
+
+    @app.get("/icon.svg")
+    async def web_icon() -> Any:
+        return Response(_WEB_ICON_SVG, media_type="image/svg+xml")
 
     @app.post("/v1/login")
     async def login(body: dict[str, Any], request: Request) -> Any:

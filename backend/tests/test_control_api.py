@@ -43,6 +43,15 @@ def test_head_root_is_ok(client):
     assert client.get("/").status_code == 200
 
 
+def test_pwa_routes_served(client):
+    m = client.get("/manifest.webmanifest")
+    assert m.status_code == 200
+    assert m.json()["display"] == "standalone"
+    i = client.get("/icon.svg")
+    assert i.status_code == 200
+    assert i.headers["content-type"].startswith("image/svg+xml")
+
+
 def test_ready(client):
     resp = client.get("/ready")
     assert resp.status_code == 200

@@ -29,3 +29,12 @@ def test_inline_script_has_valid_syntax():
 
 def test_send_chat_message_defined():
     assert "async function sendChatMessage(" in INDEX.read_text(encoding="utf-8")
+
+
+def test_index_links_pwa_assets():
+    html = INDEX.read_text(encoding="utf-8")
+    assert 'rel="manifest"' in html and "/manifest.webmanifest" in html
+    # the app-style shell: bottom tabs mirror the mobile app
+    for tab in ("Home", "Live", "Chat", "Position", "Settings"):
+        assert f'"{tab}"' in html
+

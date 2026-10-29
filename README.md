@@ -15,6 +15,10 @@ Deploy on Render with the Blueprint (`render.yaml`) and set `ADMIN_USERNAME`,
 Then log in to the website at `https://<service>.onrender.com/`, the mobile app, or
 control the agent from Telegram. Full steps: `deploy/render.md`.
 
+The website is an installable, app-style UI (Home · Live · Chat · Position · Settings, same as
+the mobile app). On a phone, open it in the browser and choose **Add to Home Screen** to run it
+full-screen like an app.
+
 ## 1. Start the agent
 
 ```bash

@@ -2,652 +2,751 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>PRED Agent</title>
-<meta name="description" content="PRED Agent — Human-in-the-loop sports trading assistant">
+<meta name="description" content="PRED Agent — human-in-the-loop sports trading assistant">
+<meta name="theme-color" content="#0B0F14">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="PRED Agent">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/icon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700;800&display=swap">
 <style>
-  :root{--bg:#0f1115;--card:#181b22;--line:#272b35;--fg:#e8eaf0;--mut:#8a90a0;--ok:#2fbf71;--warn:#e5a93d;--bad:#e5484d;--acc:#4c8dff;--chat-user:#1e2a3a;--chat-bot:#1a1e26}
-  @media (prefers-color-scheme: light){:root{--bg:#f4f5f8;--card:#fff;--line:#dfe2ea;--fg:#14161c;--mut:#667085;--chat-user:#e8f0fe;--chat-bot:#f4f5f8}}
-  *{box-sizing:border-box}
-  body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
-  main{max-width:980px;margin:0 auto;padding:16px}
-  h1{font-size:18px;margin:0}
-  h2{font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--mut);margin:24px 0 8px}
-  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:10px}
-  .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
-  .grow{flex:1}
-  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px}
-  .stat b{display:block;font-size:20px}
-  .stat span{color:var(--mut);font-size:12px}
-  button{font:inherit;border:1px solid var(--line);background:var(--card);color:var(--fg);padding:9px 14px;border-radius:10px;cursor:pointer}
-  button.primary{background:var(--acc);border-color:var(--acc);color:#fff}
-  button.ok{background:var(--ok);border-color:var(--ok);color:#fff}
-  button.bad{background:var(--bad);border-color:var(--bad);color:#fff}
-  button.chip{padding:5px 12px;font-size:13px;border-radius:999px}
-  button:disabled{opacity:.5;cursor:default}
-  input,textarea{font:inherit;width:100%;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--fg)}
-  textarea{resize:vertical;min-height:60px}
-  .tag{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;font-weight:600;border:1px solid var(--line)}
-  .paper{color:var(--ok)} .live{color:var(--bad)} .paused{color:var(--warn)}
-  .mut{color:var(--mut)} .err{color:var(--bad);min-height:1.4em}
-  #login{max-width:360px;margin:12vh auto}
-  #login input{margin-bottom:10px}
-  .hidden{display:none}
-  pre{white-space:pre-wrap;margin:0;font:13px/1.4 ui-monospace,Menlo,monospace}
+:root{color-scheme:dark light;
+  --bg:#0B0F14;--surface:#141B23;--alt:#1C2530;--text:#E8ECF1;--text2:#8FA3B8;--muted:#6B7C8F;--line:#2A3644;
+  --primary:#60A5FA;--input:#10161D;--long:#22C55E;--short:#EF4444;--alert:#F59E0B;--track:#2A3644;
+  --paper-bg:#10243A;--paper:#60A5FA;--live-bg:#3A1316;--live:#EF4444;--paused-bg:#3A2A10;--paused:#F59E0B;
+  --primary-soft:#13294A;--long-soft:#0F2A1B;--short-soft:#331517;--alert-soft:#3A2A10;--tabbar:#0F151C;
+  --mono:"JetBrains Mono",ui-monospace,Menlo,Consolas,monospace;
+  --sans:Inter,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+@media(prefers-color-scheme:light){:root{
+  --bg:#E4E8EC;--surface:#F2F4F6;--alt:#DDE2E7;--text:#1A1F26;--text2:#56606B;--muted:#7A8590;--line:#C5CCD4;
+  --primary:#0A6BE0;--input:#F2F4F6;--long:#16A34A;--short:#DC2626;--alert:#C2410C;--track:#CBD2D9;
+  --paper-bg:#D3E3F3;--paper:#1565C0;--live-bg:#F1D6D9;--live:#C62828;--paused-bg:#F1E0C8;--paused:#C2410C;
+  --primary-soft:#D5E4F8;--long-soft:#D4EBDD;--short-soft:#F3D9D9;--alert-soft:#F1E0C8;--tabbar:#F7F8FA}}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--text);font:15px/1.45 var(--sans);-webkit-font-smoothing:antialiased}
+button{font:inherit;color:inherit;cursor:pointer}
+button:disabled{opacity:.45;cursor:default}
+button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px solid var(--primary);outline-offset:2px}
+.hidden{display:none!important}
+.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.long{color:var(--long)}.short{color:var(--short)}.alert{color:var(--alert)}.muted{color:var(--text2)}
+.ic{fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex:none}
 
-  /* ── Tab navigation ── */
-  .tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);margin-bottom:16px}
-  .tab{background:none;border:none;border-bottom:2px solid transparent;padding:8px 14px;color:var(--mut);border-radius:0;cursor:pointer;font-size:14px}
-  .tab.active{color:var(--fg);border-bottom-color:var(--acc)}
+/* shell */
+#app{max-width:640px;margin:0 auto;height:100dvh;display:flex;flex-direction:column;background:var(--bg)}
+@media(min-width:660px){#app{border-inline:1px solid var(--line)}}
+header.top{display:flex;align-items:center;gap:8px;padding:calc(env(safe-area-inset-top,0px) + 10px) 16px 10px}
+header.top .titles{flex:1;min-width:0}
+header.top h1{margin:0;font-size:22px;line-height:1.15;font-weight:800;letter-spacing:-.02em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+header.top .sub{color:var(--text2);font-size:12px;min-height:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.iconbtn{background:none;border:0;padding:6px;margin-left:-8px;color:var(--text);display:flex;border-radius:10px}
+.pill{border:1px solid;border-radius:999px;padding:3px 10px;font-size:11px;font-weight:800;letter-spacing:.04em;white-space:nowrap;display:inline-flex;align-items:center;gap:6px}
+.pill::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor}
+.pill.paper{background:var(--paper-bg);color:var(--paper)}
+.pill.live{background:var(--live-bg);color:var(--live)}
+.pill.paused{background:var(--paused-bg);color:var(--paused)}
+.panic{display:flex;align-items:center;gap:5px;border:1px solid var(--short);color:var(--short);background:transparent;border-radius:999px;padding:5px 11px;font-weight:800;font-size:12px}
+.panic:active{background:var(--short-soft)}
+.stale{margin:0 16px 10px;padding:9px 12px;border:1px solid var(--paused);background:var(--paused-bg);color:var(--paused);border-radius:12px;font-size:12px;font-weight:700}
+main#view{flex:1;overflow-y:auto;padding:0 16px 24px;overscroll-behavior:contain}
+main#view.chatmode{display:flex;flex-direction:column;overflow:hidden;padding-bottom:0}
+nav#tabbar{display:grid;grid-template-columns:repeat(5,1fr);background:var(--tabbar);border-top:1px solid var(--line);padding:6px 0 calc(env(safe-area-inset-bottom,0px) + 6px)}
+.tab{position:relative;background:none;border:0;display:flex;flex-direction:column;align-items:center;gap:2px;color:var(--muted);font-size:11px;font-weight:700;padding:4px 0}
+.tab.active{color:var(--primary)}
+.tab .badge{position:absolute;top:0;left:calc(50% + 6px);min-width:17px;height:17px;border-radius:9px;background:var(--short);color:#fff;font:800 10px/17px var(--sans);font-style:normal;text-align:center;padding:0 4px}
 
-  /* ── Chat panel ── */
-  #chat-panel{display:flex;flex-direction:column;height:70vh;min-height:400px}
-  #chat-messages{flex:1;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:10px}
-  .chat-msg{max-width:80%;padding:10px 14px;border-radius:12px;word-wrap:break-word;line-height:1.5}
-  .chat-msg.user{background:var(--chat-user);align-self:flex-end;border-radius:12px 12px 4px 12px}
-  .chat-msg.assistant{background:var(--chat-bot);align-self:flex-start;border-radius:12px 12px 12px 4px;border:1px solid var(--line)}
-  .chat-msg .role{font-size:11px;color:var(--mut);margin-bottom:4px}
-  .chat-input-row{display:flex;gap:8px;padding:12px;border-top:1px solid var(--line)}
-  #chat-input{flex:1;min-height:40px;max-height:120px;resize:none;padding:8px 12px}
-  #chat-send{width:80px;flex-shrink:0}
-  .chips{display:flex;gap:6px;flex-wrap:wrap;padding:8px 12px 0}
+/* primitives */
+.card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:10px}
+.card.tap{cursor:pointer;width:100%;text-align:left;display:block}
+.sect{display:flex;align-items:center;justify-content:space-between;margin:20px 0 8px}
+.sect h2{margin:0;font-size:15px;font-weight:700}
+.link{background:none;border:0;color:var(--primary);font-size:13px;font-weight:700;padding:4px 0}
+.row{display:flex;align-items:center;gap:8px}.row.wrap{flex-wrap:wrap}.grow{flex:1;min-width:0}
+.lbl{color:var(--text2);font-size:12px;font-weight:600;margin-bottom:2px}
+.hero-v{font-size:38px;font-weight:800;letter-spacing:-.04em;line-height:1.1;margin-top:2px}
+.hint{color:var(--alert);font-size:12px;margin-top:6px}
+.div{height:1px;background:var(--line);margin:14px 0}
+.stats{display:flex;gap:16px;flex-wrap:wrap}
+.stat{min-width:90px}.stat span{display:block;color:var(--text2);font-size:12px}.stat b{font-size:17px;font-weight:700}
+.chip{display:inline-block;border:1px solid var(--line);background:var(--alt);color:var(--text2);border-radius:999px;padding:2px 9px;font-size:11px;font-weight:700;white-space:nowrap}
+.chip.long{background:var(--long-soft);border-color:var(--long);color:var(--long)}
+.chip.short{background:var(--short-soft);border-color:var(--short);color:var(--short)}
+.chip.alert{background:var(--alert-soft);border-color:var(--alert);color:var(--alert)}
+.chip.neutral{background:var(--primary-soft);border-color:var(--primary);color:var(--primary)}
+.empty{display:flex;flex-direction:column;align-items:center;gap:4px;padding:14px 8px;text-align:center}
+.empty span{color:var(--text2);font-size:13px}
+.seg{display:flex;background:var(--alt);border-radius:12px;padding:3px;margin:4px 0 14px}
+.seg button{flex:1;border:0;background:none;border-radius:9px;padding:8px 6px;font-weight:700;font-size:13px;color:var(--text2)}
+.seg button.on{background:var(--surface);color:var(--text);box-shadow:0 0 0 1px var(--line)}
+.btn{border:1px solid var(--line);background:var(--alt);border-radius:10px;padding:9px 14px;font-weight:700;font-size:14px;min-height:40px}
+.btn.primary{background:var(--primary);border-color:var(--primary);color:#fff}
+.btn.long{background:var(--long);border-color:var(--long);color:#fff}
+.btn.short{background:var(--short);border-color:var(--short);color:#fff}
+.btn.ghost{background:none}
+.btn.block{width:100%}
+input,textarea{font:inherit;width:100%;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:var(--input);color:var(--text)}
+input.mono{font-family:var(--mono)}
+.err{color:var(--short);min-height:1.4em;font-size:13px}
+.note{font-size:12px;color:var(--text2)}
+.list{margin:6px 0 0;padding-left:18px;font-size:13px;color:var(--text2)}
+.kv{display:flex;justify-content:space-between;gap:12px;padding:8px 0;border-top:1px solid var(--line);font-size:14px}
+.kv:first-child{border-top:0}
+.kv span:first-child{color:var(--text2)}
+.truncate{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
-  /* ── Chat cards ── */
-  .chat-card{margin-top:8px;border:1px solid var(--line);border-radius:8px;padding:10px;background:var(--bg)}
-  .chat-card h4{margin:0 0 6px;font-size:13px;color:var(--mut);text-transform:uppercase}
-  .chat-card .card-actions{display:flex;gap:6px;margin-top:8px}
-  .fixture-row{padding:4px 0;border-bottom:1px solid var(--line);font-size:13px}
-  .fixture-row:last-child{border:none}
-  .badge{display:inline-block;padding:2px 6px;border-radius:4px;font-size:11px;font-weight:700;margin-right:4px}
-  .badge.live{background:#e5484d22;color:var(--bad)}
-  .badge.upcoming{background:#4c8dff22;color:var(--acc)}
+/* fixtures + gauge */
+.team{display:flex;justify-content:space-between;gap:10px;font-weight:700;font-size:15px}
+.score{font-family:var(--mono);font-weight:800;font-size:18px}
+.quotes{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
+.quote{background:var(--alt);border-radius:8px;padding:5px 9px;font-size:11px;color:var(--text2)}
+.quote b{display:block;font-family:var(--mono);color:var(--text);font-size:13px}
+.vs{color:var(--muted);font-weight:500}
+.gauge{position:relative;height:10px;border-radius:5px;background:var(--track);margin:6px 0 14px;overflow:visible}
+.gauge .fill{height:100%;border-radius:5px;background:repeating-linear-gradient(135deg,var(--c) 0 6px,color-mix(in srgb,var(--c) 55%,transparent) 6px 10px)}
+.gauge .fill.long{--c:var(--long)}.gauge .fill.short{--c:var(--short)}.gauge .fill.neutral{--c:var(--primary)}
+.gauge .dot{position:absolute;top:-3px;width:16px;height:16px;margin-left:-8px;border-radius:50%;background:var(--text);border:3px solid var(--bg)}
+.bigscore{font-family:var(--mono);font-size:44px;font-weight:800;letter-spacing:-.04em;text-align:center;margin:8px 0}
+.bigteams{display:flex;justify-content:space-between;gap:10px;text-align:center}
+.bigteams b{flex:1;font-size:16px}
 
-  /* ── Rules ── */
-  .rule-status{font-size:11px;font-weight:700;padding:2px 6px;border-radius:4px}
-  .rule-status.ACTIVE{background:#2fbf7122;color:var(--ok)}
-  .rule-status.PENDING{background:#e5a93d22;color:var(--warn)}
-  .rule-status.DONE{background:#8a90a022;color:var(--mut)}
-  .rule-status.BLOCKED{background:#e5484d22;color:var(--bad)}
+/* chat */
+.chatwrap{flex:1;min-height:0;display:flex;flex-direction:column}
+.msgs{flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:10px;padding:2px 0 10px}
+.msg{max-width:86%;padding:10px 13px;border-radius:14px;word-wrap:break-word;white-space:pre-wrap}
+.msg.user{align-self:flex-end;background:var(--primary-soft);border-radius:14px 14px 4px 14px}
+.msg.assistant{align-self:flex-start;background:var(--surface);border:1px solid var(--line);border-radius:14px 14px 14px 4px}
+.msg .who{font-size:11px;color:var(--text2);margin-bottom:3px;white-space:normal}
+.chips{display:flex;gap:6px;overflow-x:auto;padding:4px 0 8px;flex:none}
+.chips button{background:var(--alt);border:1px solid var(--line);border-radius:999px;padding:6px 12px;font-size:13px;font-weight:600;white-space:nowrap}
+.inputrow{display:flex;gap:8px;align-items:flex-end;padding:8px 0 10px;border-top:1px solid var(--line);flex:none}
+.inputrow textarea{resize:none;min-height:42px;max-height:120px}
+.ccard{margin-top:8px;border:1px solid var(--line);border-radius:10px;padding:10px;background:var(--bg);white-space:normal}
+.ccard h4{margin:0 0 6px;font-size:12px;color:var(--text2)}
+.ccard .actions{display:flex;gap:6px;margin-top:8px}
+.frow{padding:4px 0;border-bottom:1px solid var(--line);font-size:13px}.frow:last-child{border:0}
+
+/* login */
+#login{max-width:380px;margin:0 auto;padding:calc(env(safe-area-inset-top,0px) + 14vh) 20px 20px}
+#login h1{font-size:30px;letter-spacing:-.03em;margin:0 0 4px}
+#login input{margin-bottom:10px}
+
+/* sheet + toast */
+.scrim{position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:flex-end;justify-content:center;z-index:20}
+.sheet{width:100%;max-width:640px;background:var(--surface);border:1px solid var(--short);border-radius:18px 18px 0 0;padding:20px 20px calc(env(safe-area-inset-bottom,0px) + 20px)}
+.sheet h3{margin:0 0 8px;font-size:20px;color:var(--short)}
+.toast{position:fixed;left:50%;bottom:90px;transform:translate(-50%,10px);background:var(--alt);border:1px solid var(--line);padding:10px 16px;border-radius:12px;font-size:14px;font-weight:600;opacity:0;pointer-events:none;transition:opacity .2s,transform .2s;z-index:30;max-width:90vw}
+.toast.show{opacity:1;transform:translate(-50%,0)}
+.toast.bad{border-color:var(--short);color:var(--short)}
+@media(prefers-reduced-motion:reduce){.toast{transition:none}}
 </style>
 </head>
 <body>
-<main>
-  <section id="login" class="card hidden">
-    <h1>PRED Agent</h1>
-    <p class="mut">Sign in to control the agent.</p>
-    <input id="u" placeholder="Username" autocomplete="username" autocapitalize="none">
-    <input id="p" type="password" placeholder="Password" autocomplete="current-password">
-    <button id="loginBtn" class="primary" style="width:100%">Sign in</button>
-    <p id="loginErr" class="err"></p>
-  </section>
+<section id="login" class="hidden">
+  <h1>PRED Agent</h1>
+  <p class="muted">Sign in to control the agent.</p>
+  <input id="u" placeholder="Username" autocomplete="username" autocapitalize="none">
+  <input id="p" type="password" placeholder="Password" autocomplete="current-password">
+  <button id="loginBtn" class="btn primary block">Sign in</button>
+  <p id="loginErr" class="err"></p>
+</section>
 
-  <section id="app" class="hidden">
-    <div class="row">
-      <h1 class="grow">PRED Agent</h1>
-      <span id="mode" class="tag"></span>
-      <span id="pausedTag" class="tag paused hidden">PAUSED</span>
-      <button id="logout">Log out</button>
+<div id="app" class="hidden">
+  <header class="top">
+    <button id="backBtn" class="iconbtn hidden" aria-label="Back"></button>
+    <div class="titles"><h1 id="title">PRED Agent</h1><div id="sub" class="sub"></div></div>
+    <span id="modePill" class="pill hidden"></span>
+    <button id="panicTop" class="panic" aria-label="Panic"><span id="panicIc"></span>Panic</button>
+  </header>
+  <div id="stale" class="stale hidden"></div>
+  <main id="view"></main>
+  <nav id="tabbar"></nav>
+</div>
+
+<div id="sheet" class="scrim hidden">
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="panicTitle">
+    <h3 id="panicTitle">Panic</h3>
+    <p>This will immediately <b>pause the agent</b>, <b>reject pending proposals</b> and <b>cancel open orders and exit rules</b>.</p>
+    <p class="note" id="panicNote"></p>
+    <div class="row" style="margin-top:14px">
+      <button id="panicNo" class="btn grow">Cancel</button>
+      <button id="panicYes" class="btn short grow">Pause &amp; cancel everything</button>
     </div>
-
-    <!-- Tab bar -->
-    <div class="tabs">
-      <button class="tab active" id="tab-dashboard" onclick="showTab('dashboard')">Dashboard</button>
-      <button class="tab" id="tab-chat" onclick="showTab('chat')">💬 Chat</button>
-      <button class="tab" id="tab-fixtures" onclick="showTab('fixtures')">Fixtures</button>
-      <button class="tab" id="tab-rules" onclick="showTab('rules')">Rules</button>
-    </div>
-
-    <!-- Dashboard tab -->
-    <div id="pane-dashboard">
-      <h2>Status</h2>
-      <div class="card grid">
-        <div class="stat"><b id="exposure">-</b><span>Open exposure</span></div>
-        <div class="stat"><b id="pnl">-</b><span>Daily PnL</span></div>
-        <div class="stat"><b id="pending">-</b><span>Pending proposals</span></div>
-        <div class="stat"><b id="active-rules">-</b><span>Active rules</span></div>
-      </div>
-      <div class="row">
-        <button id="pauseBtn">Pause</button>
-        <button id="resumeBtn">Resume</button>
-        <span class="grow"></span>
-        <button id="panicBtn" class="bad">PANIC</button>
-      </div>
-      <p id="msg" class="err"></p>
-
-      <h2>Proposals</h2>
-      <div id="proposals"></div>
-
-      <h2>Positions</h2>
-      <div id="positions"></div>
-
-      <h2>Orders</h2>
-      <div id="orders"></div>
-
-      <h2>Limits</h2>
-      <div id="limits" class="card"></div>
-
-      <h2>LLM</h2>
-      <div class="card row">
-        <span id="llmInfo" class="grow mut">-</span>
-        <button id="llmTest">Test LLM</button>
-      </div>
-      <p id="llmMsg" class="mut"></p>
-    </div>
-
-    <!-- Chat tab -->
-    <div id="pane-chat" class="hidden">
-      <div class="card" id="chat-panel">
-        <div id="chat-messages"></div>
-        <div class="chips" id="chat-chips">
-          <button class="chip" onclick="sendChip('ekhon live match ki ki ache?')">🟢 Live matches</button>
-          <button class="chip" onclick="sendChip('upcoming match gulo dekhao')">🕐 Upcoming</button>
-          <button class="chip" onclick="sendChip('আমার positions দেখাও')">📊 Positions</button>
-          <button class="chip" onclick="sendChip('sob rules dekhao')">📋 Rules</button>
-          <button class="chip" onclick="sendChip('/status')">⚙️ Status</button>
-        </div>
-        <div class="chat-input-row">
-          <textarea id="chat-input" placeholder="Chat in Bengali, Banglish or English…" rows="1"></textarea>
-          <button id="chat-send" class="primary">Send</button>
-        </div>
-      </div>
-      <div class="row" style="margin-top:8px">
-        <span class="grow mut" id="chat-status"></span>
-        <button id="chat-clear" class="chip">Clear chat</button>
-      </div>
-    </div>
-
-    <!-- Fixtures tab -->
-    <div id="pane-fixtures" class="hidden">
-      <div class="row" style="margin-bottom:12px">
-        <button class="chip active" onclick="loadFixtures(null)" id="fx-all">All</button>
-        <button class="chip" onclick="loadFixtures('live')" id="fx-live">🟢 Live</button>
-        <button class="chip" onclick="loadFixtures('upcoming')" id="fx-upcoming">🕐 Upcoming</button>
-        <span class="grow"></span>
-        <button onclick="loadFixtures(currentFxState)" class="chip">↻ Refresh</button>
-      </div>
-      <div id="fixtures-list"></div>
-    </div>
-
-    <!-- Rules tab -->
-    <div id="pane-rules" class="hidden">
-      <div class="row" style="margin-bottom:12px">
-        <button class="chip" onclick="loadRules(null)">All</button>
-        <button class="chip" onclick="loadRules('ACTIVE')">Active</button>
-        <button class="chip" onclick="loadRules('PENDING')">Pending</button>
-        <span class="grow"></span>
-        <button onclick="loadRules(null)" class="chip">↻ Refresh</button>
-      </div>
-      <div id="rules-list"></div>
-    </div>
-  </section>
-</main>
+  </div>
+</div>
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
 
 <script>
 "use strict";
+const NS = "http://www.w3.org/2000/svg";
 const $ = (id) => document.getElementById(id);
+const GATE = { "X-Confirm": "web-confirm" };
+const TERMINAL = ["FILLED", "CANCELLED", "CANCELED", "REJECTED", "EXPIRED", "FAILED"];
 let token = localStorage.getItem("pred_token");
-let timer = null;
-let chatSessionId = null;
-let currentFxState = null;
+let timer = null, chatSessionId = null, chat = null, toastT = null;
+const S = { tab: "home", detail: null, status: null, offline: false, seg: { live: "live", pos: "positions" }, amt: {}, reload: null };
 
-// ── Tab navigation ──────────────────────────────────────────
-function showTab(name) {
-  ["dashboard","chat","fixtures","rules"].forEach((t) => {
-    $(("pane-" + t)).classList.toggle("hidden", t !== name);
-    $("tab-" + t).classList.toggle("active", t === name);
-  });
-  if (name === "chat" && $("chat-messages").childElementCount === 0) {
-    appendChatMsg("assistant", "Assalamu Alaikum! 🏟️ PRED Agent here. আমি বাংলা, Banglish বা English এ কথা বলতে পারি।\n\nজিজ্ঞেস করুন: live match, positions, rules, বা trade/rule তৈরির জন্য।");
+// ── DOM helpers (textContent only — never innerHTML with server/model data) ──
+function el(tag, props, ...kids) {
+  const e = document.createElement(tag);
+  for (const k in props || {}) {
+    const v = props[k];
+    if (k === "class") e.className = v; else if (k === "style") e.style.cssText = v; else e[k] = v;
   }
-  if (name === "fixtures") loadFixtures(currentFxState);
-  if (name === "rules") loadRules(null);
+  kids.flat(2).forEach((c) => { if (c != null && c !== false) e.append(c.nodeType ? c : String(c)); });
+  return e;
+}
+const ICONS = {
+  home: '<path d="M3.5 11 12 4l8.5 7"/><path d="M5.5 9.5V20h13V9.5"/><path d="M10 20v-5.5h4V20"/>',
+  live: '<circle cx="12" cy="12" r="2.2"/><path d="M7.6 7.6a6.2 6.2 0 0 0 0 8.8M16.4 7.6a6.2 6.2 0 0 1 0 8.8"/><path d="M4.8 4.8a10.2 10.2 0 0 0 0 14.4M19.2 4.8a10.2 10.2 0 0 1 0 14.4"/>',
+  chat: '<path d="M4 5.5h16v10.5H10l-4.5 3.5V16H4z"/><path d="M8 9.5h8M8 12.5h5"/>',
+  position: '<path d="M4 20V4"/><path d="M4 20h16"/><path d="m7.5 15 3.5-4 3 2.5 5-6"/><path d="M16 7.5h3.5V11"/>',
+  settings: '<path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/>',
+  panic: '<path d="M12 3.5 21 19.5H3z"/><path d="M12 10v4.2"/><circle cx="12" cy="16.9" r=".6"/>',
+  back: '<path d="m14.5 5.5-6.5 6.5 6.5 6.5"/>',
+  chevron: '<path d="m9.5 5.5 6.5 6.5-6.5 6.5"/>',
+  logout: '<path d="M10 4.5H5.5v15H10"/><path d="M14 8.5 18 12l-4 3.5M18 12H9.5"/>',
+};
+function icon(name, size) {
+  const s = document.createElementNS(NS, "svg");
+  s.setAttribute("viewBox", "0 0 24 24"); s.setAttribute("width", size || 22); s.setAttribute("height", size || 22);
+  s.setAttribute("class", "ic"); s.innerHTML = ICONS[name]; // constant markup only
+  return s;
+}
+const num = (v) => { const n = parseFloat(v); return isNaN(n) ? null : n; };
+const usd = (v) => { const n = num(v); return n == null ? "—" : n.toLocaleString("en-US", { style: "currency", currency: "USD" }); };
+function signed(v) {
+  const n = num(v); if (n == null) return { t: "—", tone: "" };
+  const a = usd(Math.abs(n));
+  return n > 0 ? { t: "▲ +" + a, tone: "long" } : n < 0 ? { t: "▼ −" + a, tone: "short" } : { t: a, tone: "" };
+}
+function dt(iso) {
+  if (!iso) return "—";
+  const d = new Date(iso); if (isNaN(d)) return String(iso);
+  return d.toLocaleString("en-GB", { timeZone: "Asia/Dhaka", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
+}
+function until(iso) {
+  if (!iso) return "";
+  const s = Math.round((new Date(iso) - Date.now()) / 1000);
+  if (isNaN(s)) return "";
+  if (s <= 0) return "expired";
+  return s >= 3600 ? Math.floor(s / 3600) + "h " + Math.floor((s % 3600) / 60) + "m" : s >= 60 ? Math.floor(s / 60) + "m " + (s % 60) + "s" : s + "s";
+}
+const errOf = (r) => (r && r.error && r.error.message) || "Request failed";
+function toast(msg, bad) {
+  const t = $("toast"); t.textContent = msg; t.className = "toast show" + (bad ? " bad" : "");
+  clearTimeout(toastT); toastT = setTimeout(() => { t.className = "toast"; }, 3500);
 }
 
-// ── API helper ──────────────────────────────────────────────
+// ── UI kit ──
+const card = (...k) => el("div", { class: "card" }, ...k);
+const chip = (label, tone) => el("span", { class: "chip " + (tone || ""), textContent: label });
+const sideChip = (side) => chip(side === "short" ? "▼ SHORT" : "▲ LONG", side === "short" ? "short" : "long");
+const stat = (label, value, tone) => el("div", { class: "stat" }, el("span", { textContent: label }), el("b", { class: "mono " + (tone || ""), textContent: value }));
+const fill = (box, ...kids) => box.replaceChildren(...kids.flat(2).filter((k) => k != null && k !== false));
+const empty = (t, h) => el("div", { class: "empty" }, el("b", { textContent: t }), h ? el("span", { textContent: h }) : null);
+const kv = (k, v) => el("div", { class: "kv" }, el("span", { textContent: k }), el("span", { class: "mono", textContent: v }));
+function section(title, action, onAction) {
+  return el("div", { class: "sect" }, el("h2", { textContent: title }), action ? el("button", { class: "link", textContent: action, onclick: onAction }) : null);
+}
+function seg(opts, val, onChange) {
+  return el("div", { class: "seg" }, opts.map(([v, l]) => el("button", { class: v === val ? "on" : "", textContent: l, onclick: () => onChange(v) })));
+}
+function gauge(p, side) {
+  const pct = p == null ? null : Math.max(0, Math.min(100, (p > 1 ? p : p * 100)));
+  return el("div", { class: "gauge" }, el("div", { class: "fill " + side, style: "width:" + (pct || 0) + "%" }), pct == null ? null : el("i", { class: "dot", style: "left:" + pct + "%" }));
+}
+function safeUrl(u) { try { const x = new URL(u); return x.protocol === "https:" || x.protocol === "http:" ? x.href : null; } catch (_) { return null; } }
+
+// ── API ──
 async function api(path, opts = {}) {
-  const headers = { "Content-Type": "application/json" };
+  const headers = Object.assign({ "Content-Type": "application/json" }, opts.headers || {});
   if (token) headers.Authorization = "Bearer " + token;
   let resp;
-  try {
-    resp = await fetch(path, { ...opts, headers });
-  } catch (_) {
-    return { ok: false, error: { code: "network", message: "Cannot reach the server." } };
-  }
+  try { resp = await fetch(path, Object.assign({}, opts, { headers })); }
+  catch (_) { return { ok: false, offline: true, error: { code: "network", message: "Cannot reach the server." } }; }
   let body = {};
   try { body = await resp.json(); } catch (_) {}
-  if (resp.status === 401 && token && path !== "/v1/login") { signOut(); }
+  if (resp.status === 401 && token && path !== "/v1/login") signOut();
   if (!body || typeof body !== "object") body = {};
   if (!resp.ok && !body.error) body.error = { code: "http_error", message: "HTTP " + resp.status };
   if (!resp.ok) body.ok = false;
   return body;
 }
+// gated=true sends X-Confirm: the caller has already passed a human confirmation step.
+const post = (path, body, gated) => api(path, { method: "POST", body: JSON.stringify(body || {}), headers: gated ? GATE : {} });
 
+// ── Session ──
 function signOut() {
-  token = null;
-  localStorage.removeItem("pred_token");
-  clearInterval(timer);
-  $("p").value = "";
-  $("loginErr").textContent = "";
-  $("app").classList.add("hidden");
-  $("login").classList.remove("hidden");
+  token = null; localStorage.removeItem("pred_token"); clearInterval(timer);
+  S.status = null; S.detail = null; S.tab = "home"; chat = null; chatSessionId = null;
+  $("p").value = ""; $("loginErr").textContent = "";
+  $("app").classList.add("hidden"); $("login").classList.remove("hidden");
 }
-
 async function logout() {
-  const t = token;
-  if (t) {
-    try { await fetch("/v1/logout", { method: "POST", headers: { Authorization: "Bearer " + t } }); } catch (_) {}
-  }
+  if (token) { try { await fetch("/v1/logout", { method: "POST", headers: { Authorization: "Bearer " + token } }); } catch (_) {} }
   signOut();
 }
-
 function showApp() {
-  $("login").classList.add("hidden");
-  $("app").classList.remove("hidden");
-  refresh();
-  clearInterval(timer);
-  timer = setInterval(refresh, 6000);
-  loadLlm();
+  $("login").classList.add("hidden"); $("app").classList.remove("hidden");
+  render(); refreshStatus();
+  clearInterval(timer); timer = setInterval(tick, 8000);
 }
-
-// ── Login ───────────────────────────────────────────────────
 $("loginBtn").onclick = async () => {
-  const btn = $("loginBtn");
-  $("loginErr").textContent = "";
-  const username = $("u").value.trim();
-  const password = $("p").value;
+  const btn = $("loginBtn"); $("loginErr").textContent = "";
+  const username = $("u").value.trim(), password = $("p").value;
   if (!username || !password) { $("loginErr").textContent = "Enter username and password"; return; }
-  btn.disabled = true; btn.textContent = "Signing in...";
+  btn.disabled = true; btn.textContent = "Signing in…";
   try {
     const r = await api("/v1/login", { method: "POST", body: JSON.stringify({ username, password }) });
-    if (r.ok && r.data && r.data.token) {
-      token = r.data.token;
-      localStorage.setItem("pred_token", token);
-      $("p").value = "";
-      showApp();
-    } else {
-      $("loginErr").textContent = (r.error && r.error.message) || "Login failed";
-    }
+    if (r.ok && r.data && r.data.token) { token = r.data.token; localStorage.setItem("pred_token", token); $("p").value = ""; showApp(); }
+    else $("loginErr").textContent = errOf(r);
   } finally { btn.disabled = false; btn.textContent = "Sign in"; }
 };
 $("p").addEventListener("keydown", (e) => { if (e.key === "Enter") $("loginBtn").click(); });
 $("u").addEventListener("keydown", (e) => { if (e.key === "Enter") $("p").focus(); });
-$("logout").onclick = logout;
 
-// ── Dashboard actions ────────────────────────────────────────
-// confirmHeader(): the website's human confirmation gate. Returns the
-// X-Confirm headers after the operator confirms, or null if cancelled.
-function confirmHeader(msg) {
-  if (!confirm(msg)) return null;
-  return { "X-Confirm": "web-confirm" };
+// ── Status header (mode pill, stale banner, proposal badge) ──
+async function refreshStatus() {
+  const r = await api("/v1/status");
+  if (r.ok && r.data) { S.status = r.data; S.offline = false; } else if (r.offline) S.offline = true;
+  paintStatus();
+  return r.ok;
 }
-async function act(path, confirmText) {
-  if (confirmText && !confirm(confirmText)) return;
-  const r = await api(path, { method: "POST", body: "{}" });
-  $("msg").textContent = r.ok ? "" : ((r.error && r.error.message) || "Failed");
-  refresh();
+function paintStatus() {
+  const s = S.status, pill = $("modePill"), stale = $("stale"), badge = $("badge-home");
+  if (s) {
+    const live = s.mode === "LIVE";
+    pill.className = "pill " + (s.paused ? "paused" : live ? "live" : "paper");
+    pill.textContent = s.paused ? "PAUSED · " + s.mode : live ? "LIVE · REAL FUNDS" : "PAPER";
+  } else pill.className = "pill hidden";
+  const msg = S.offline ? "OFFLINE — showing last data, actions may fail" : s && !s.feeds_ok ? "STALE — data feeds offline, actions may be unavailable" : "";
+  stale.textContent = msg; stale.classList.toggle("hidden", !msg);
+  const n = s ? s.pending_proposals || 0 : 0;
+  badge.textContent = n; badge.classList.toggle("hidden", !n);
 }
-$("pauseBtn").onclick = () => act("/v1/pause");
-$("resumeBtn").onclick = () => act("/v1/resume");
-$("panicBtn").onclick = async () => {
-  const h = confirmHeader("PANIC: pause, reject proposals, cancel orders AND rules?");
-  if (!h) return;
-  const r = await api("/v1/panic", { method: "POST", body: "{}", headers: h });
-  $("msg").textContent = r.ok ? "" : ((r.error && r.error.message) || "Failed");
-  refresh();
+function tick() {
+  if (document.hidden || !token) return;
+  refreshStatus();
+  const v = $("view");
+  const typing = v.contains(document.activeElement) && /^(INPUT|TEXTAREA)$/.test(document.activeElement.tagName);
+  if (S.reload && !typing) S.reload();
+}
+document.addEventListener("visibilitychange", () => { if (!document.hidden && token) tick(); });
+
+// ── Navigation ──
+const TABS = [["home", "Home"], ["live", "Live"], ["chat", "Chat"], ["position", "Position"], ["settings", "Settings"]];
+function buildChrome() {
+  TABS.forEach(([k, label]) => $("tabbar").append(el("button", { class: "tab", id: "tab-" + k, onclick: () => go(k) },
+    icon(k, 23), el("span", { textContent: label }), el("i", { class: "badge hidden", id: "badge-" + k }))));
+  $("backBtn").append(icon("back", 24));
+  $("panicIc").append(icon("panic", 15));
+  $("panicIc").style.display = "flex";
+}
+function go(tab) { S.tab = tab; S.detail = null; render(); }
+function openDetail(kind, id) { S.detail = { kind, id }; history.pushState({ d: 1 }, ""); render(); }
+$("backBtn").onclick = () => history.back();
+window.addEventListener("popstate", () => { if (S.detail) { S.detail = null; render(); } });
+function setHead(title, sub) { $("title").textContent = title; $("sub").textContent = sub || ""; }
+function render() {
+  S.reload = null;
+  const d = S.detail, v = $("view");
+  TABS.forEach(([k]) => $("tab-" + k).classList.toggle("active", k === S.tab));
+  $("backBtn").classList.toggle("hidden", !d);
+  v.classList.toggle("chatmode", !d && S.tab === "chat");
+  v.replaceChildren(); v.scrollTop = 0;
+  if (d) VIEWS[d.kind](v, d); else VIEWS[S.tab](v);
+  paintStatus();
+}
+// Register a loader for the current view; it re-runs on the poll timer.
+function mount(load) { S.reload = load; load(); return () => S.reload === load; }
+
+// ── Reusable rows ──
+function proposalRow(p) {
+  return el("button", { class: "card tap", onclick: () => openDetail("proposals") },
+    el("div", { class: "row" }, sideChip(p.side), p.advisory ? chip("ADVISORY", "alert") : null, el("span", { class: "grow" }), icon("chevron", 18)),
+    el("div", { class: "row mono", style: "justify-content:space-between;margin-top:10px;font-weight:700" },
+      el("span", { textContent: "@ " + p.price_cents + "¢" }), el("span", { textContent: usd(p.amount_usd) }),
+      el("span", { class: "long", textContent: "+" + (num(p.edge_pp) || 0).toFixed(1) + " pp" })));
+}
+function liveRow(f) {
+  return el("button", { class: "card tap", onclick: () => openDetail("fixture", f.id) },
+    el("div", { class: "row" },
+      el("b", { class: "grow truncate", textContent: (f.home_team || "?") + " vs " + (f.away_team || "?") }),
+      el("span", { class: "score", textContent: f.home_score != null ? f.home_score + "–" + (f.away_score != null ? f.away_score : 0) : "—" })),
+    el("div", { class: "row", style: "margin-top:8px" }, chip(f.minute != null ? f.minute + "′" : f.game_status || "LIVE", "short"), f.league ? el("span", { class: "note", textContent: f.league }) : null));
+}
+function fixtureCard(f) {
+  const live = f.state === "live";
+  const quotes = (f.markets || []).filter((m) => m.best_bid_cents != null || m.best_ask_cents != null).slice(0, 3);
+  const sc = (v) => (v != null ? v : live ? 0 : "");
+  return el("button", { class: "card tap", onclick: () => openDetail("fixture", f.id) },
+    el("div", { class: "row", style: "margin-bottom:10px" },
+      live ? chip(f.minute != null ? "LIVE · " + f.minute + "′" : "LIVE", "short") : chip(dt(f.kickoff_dhaka || f.kickoff), "neutral"),
+      f.league ? el("span", { class: "note truncate", textContent: f.league }) : null),
+    el("div", { class: "team" }, el("span", { class: "truncate", textContent: f.home_team || "?" }), el("span", { class: "score", textContent: String(sc(f.home_score)) })),
+    el("div", { class: "team", style: "margin-top:4px" }, el("span", { class: "truncate", textContent: f.away_team || "?" }), el("span", { class: "score", textContent: String(sc(f.away_score)) })),
+    quotes.length ? el("div", { class: "quotes" }, quotes.map((m) => el("div", { class: "quote" }, "Bid / Ask", el("b", { textContent: (m.best_bid_cents != null ? m.best_bid_cents : "—") + " / " + (m.best_ask_cents != null ? m.best_ask_cents : "—") + "¢" })))) : null);
+}
+
+const VIEWS = {};
+
+// ── Home ──
+VIEWS.home = (v) => {
+  setHead("PRED Agent", "");
+  const hero = el("div"), dec = el("div"), live = el("div");
+  v.append(hero, dec, live);
+  const alive = mount(async () => {
+    const [, p, f] = await Promise.all([refreshStatus(), api("/v1/proposals?status=pending"), api("/v1/fixtures?state=live")]);
+    if (!alive()) return;
+    const st = S.status;
+    if (st) {
+      const pnl = signed(st.daily_pnl);
+      hero.replaceChildren(card(
+        el("div", { class: "lbl", textContent: "Balance" }),
+        el("div", { class: "hero-v mono", textContent: st.balance == null ? "—" : usd(st.balance) }),
+        st.balance == null && st.feeds_ok ? el("div", { class: "hint", textContent: "Balance unavailable — the server could not fetch it from PRED." }) : null,
+        el("div", { class: "div" }),
+        el("div", { class: "stats" }, stat("Exposure", usd(st.exposure)), stat("Daily PnL", pnl.t, pnl.tone), stat("Active rules", String(st.active_rules || 0)))));
+    }
+    if (p.ok) {
+      const pending = (p.data || []).filter((x) => x.status === "PROPOSED");
+      fill(dec, section("Needs your decision" + (pending.length ? " · " + pending.length : ""), pending.length ? "Review all" : null, () => openDetail("proposals")),
+        pending.length ? pending.slice(0, 3).map(proposalRow) : card(empty("Nothing waiting", "New trade proposals from the agent will show up here.")));
+    }
+    if (f.ok) {
+      const fx = f.data || [];
+      fill(live, section("Live now", fx.length ? "See all" : null, () => go("live")),
+        fx.length ? fx.slice(0, 4).map(liveRow) : card(empty("No live matches", "Upcoming fixtures are on the Live tab.")));
+    }
+  });
 };
 
-function usd(v) { const n = Number(v); return isNaN(n) ? "-" : "$" + n.toFixed(2); }
+// ── Live / Upcoming ──
+VIEWS.live = (v) => {
+  setHead("Live", "Matches the agent is watching");
+  const list = el("div");
+  v.append(seg([["live", "Live now"], ["upcoming", "Upcoming"]], S.seg.live, (x) => { S.seg.live = x; render(); }), list);
+  const alive = mount(async () => {
+    const r = await api("/v1/fixtures?state=" + S.seg.live);
+    if (!alive()) return;
+    if (!r.ok) { if (!list.childElementCount) list.append(el("div", { class: "err", textContent: errOf(r) })); return; }
+    const items = r.data || [];
+    list.replaceChildren(...(items.length ? items.map(fixtureCard) : [card(empty(S.seg.live === "live" ? "No live matches right now" : "No upcoming fixtures", "Pull to refresh happens automatically."))]));
+  });
+};
 
-function el(tag, props, ...kids) {
-  const e = document.createElement(tag);
-  Object.assign(e, props || {});
-  kids.forEach((k) => e.append(k));
-  return e;
-}
+// ── Fixture detail ──
+VIEWS.fixture = (v, d) => {
+  setHead("Match", "");
+  const box = el("div"); v.append(box);
+  const alive = mount(async () => {
+    const r = await api("/v1/fixtures/" + encodeURIComponent(d.id));
+    if (!alive()) return;
+    if (!r.ok) { box.replaceChildren(card(empty("Could not load this match", "Check your connection and try again."))); return; }
+    const fx = r.data;
+    setHead("Match", fx.league || "");
+    const live = fx.state === "live";
+    const out = [[fx.home_team || "Home", fx.p_fair_home, "long"], ["Draw", fx.p_fair_draw, "neutral"], [fx.away_team || "Away", fx.p_fair_away, "short"]];
+    const hasP = out.some((o) => o[1] != null);
+    const sources = (fx.research_sources || []).map((s) => { const u = safeUrl(s); return u ? el("div", null, el("a", { href: u, target: "_blank", rel: "noopener noreferrer", style: "color:var(--primary);word-break:break-all", textContent: s })) : el("div", { class: "note", textContent: s }); });
+    fill(box,
+      card(el("div", { class: "row", style: "margin-bottom:6px" }, live ? chip(fx.minute != null ? "LIVE · " + fx.minute + "′" : "LIVE", "short") : chip(dt(fx.kickoff_dhaka || fx.kickoff), "neutral"), fx.game_status ? chip(fx.game_status) : null),
+        el("div", { class: "bigteams" }, el("b", { textContent: fx.home_team || "?" }), el("b", { textContent: fx.away_team || "?" })),
+        el("div", { class: "bigscore", textContent: fx.home_score != null ? fx.home_score + " – " + (fx.away_score != null ? fx.away_score : 0) : "vs" })),
+      section("Agent’s fair probability"),
+      card(hasP ? out.map(([n, p, side]) => el("div", null, el("div", { class: "row" }, el("b", { class: "grow truncate", textContent: n }), el("b", { class: "mono", textContent: p != null ? (p * 100).toFixed(0) + "%" : "—" })), gauge(p, side)))
+        : empty("No estimate yet", "The agent hasn’t produced a fair probability for this match."),
+        fx.max_suggested_usd ? el("div", { class: "note", textContent: "Max suggested stake: " + usd(fx.max_suggested_usd) }) : null),
+      (fx.markets || []).length ? [section("Market quotes"), card(...fx.markets.map((m) => el("div", { class: "kv" }, el("span", { class: "truncate", textContent: m.market_id }),
+        el("span", { class: "mono", textContent: (m.best_bid_cents != null ? m.best_bid_cents : "—") + " / " + (m.best_ask_cents != null ? m.best_ask_cents : "—") + "¢" }))))] : null,
+      fx.research_summary ? [section("Research"), card(el("div", { style: "white-space:pre-wrap", textContent: fx.research_summary }), sources.length ? el("div", { style: "margin-top:10px;font-size:13px" }, sources) : null)] : null);
+  });
+};
 
-function proposalCard(p) {
+// ── Proposals ──
+function proposalCard(p, reload) {
   const pending = p.status === "PROPOSED";
-  const head = el("div", { className: "row" },
-    el("b", { className: "grow", textContent: p.side.toUpperCase() + " @ " + p.price_cents + "c  qty " + p.quantity }),
-    el("span", { className: "tag", textContent: p.status }));
-  const meta = el("div", { className: "mut",
-    textContent: p.mode + " · fixture " + p.fixture_id + " · " + usd(p.amount_usd) + " · " + p.edge_pp + "pp" });
-  const card = el("div", { className: "card" }, head, meta);
-  if (p.reasons && p.reasons.length) card.append(el("div", { textContent: "Why: " + p.reasons.slice(0, 3).join("; ") }));
-  if (pending) {
-    const amt = el("input", { placeholder: "Amount USD (optional)", inputMode: "decimal", style: "max-width:170px" });
-    const ok = el("button", { className: "ok", textContent: "Approve" });
-    const no = el("button", { className: "bad", textContent: "Reject" });
-    ok.onclick = async () => {
-      const h = confirmHeader("Approve this trade proposal?");
-      if (!h) return;
-      const r = await api(`/v1/proposals/${p.id}/approve`, { method: "POST", body: JSON.stringify(amt.value ? { amount_usd: amt.value } : {}), headers: h });
-      $("msg").textContent = r.ok ? "" : ((r.error && r.error.message) || "Failed");
-      refresh();
-    };
-    no.onclick = async () => { await api(`/v1/proposals/${p.id}/reject`, { method: "POST", body: "{}" }); refresh(); };
-    card.append(el("div", { className: "row", style: "margin-top:8px" }, amt, ok, no));
-  }
-  return card;
+  const c = card(
+    el("div", { class: "row wrap" }, sideChip(p.side), chip((p.advisory ? "ADVISORY · " : "") + p.mode, p.advisory ? "alert" : ""), chip(p.status), el("span", { class: "grow" }),
+      p.expires_at && pending ? el("span", { class: "note", textContent: "Expires " + until(p.expires_at) }) : null),
+    el("div", { class: "stats", style: "margin-top:12px" }, stat("Price", p.price_cents + "¢"), stat("Quantity", String(num(p.quantity) != null ? num(p.quantity) : p.quantity)), stat("Amount", usd(p.amount_usd)),
+      stat("Est. fee", usd(p.est_fee_usd)), stat("Edge", "+" + (num(p.edge_pp) || 0).toFixed(1) + " pp", "long"), stat("p_fair", String(p.p_fair))),
+    (p.reasons || []).length ? el("div", { style: "margin-top:12px" }, el("div", { class: "lbl", textContent: "Why" }), el("ul", { class: "list" }, p.reasons.slice(0, 4).map((r) => el("li", { textContent: r })))) : null,
+    (p.risks || []).length ? el("div", { style: "margin-top:8px" }, el("div", { class: "lbl", textContent: "Risks" }), el("ul", { class: "list" }, p.risks.slice(0, 4).map((r) => el("li", { textContent: r })))) : null);
+  if (!pending) return c;
+  if (p.advisory) { c.append(el("div", { class: "note alert", style: "margin-top:10px", textContent: "Advisory only — this proposal can’t be traded." })); }
+  const amt = el("input", { class: "mono", placeholder: "Amount USD (optional)", inputMode: "decimal", value: S.amt[p.id] || "", oninput: () => { S.amt[p.id] = amt.value; } });
+  const ok = el("button", { class: "btn long", textContent: "Approve", disabled: !!p.advisory });
+  const no = el("button", { class: "btn short", textContent: "Reject" });
+  ok.onclick = async () => {
+    ok.disabled = true;
+    // Re-fetch right before confirming so the operator sees exactly what will be sent.
+    const fresh = await api("/v1/proposals?status=pending");
+    const cur = fresh.ok ? (fresh.data || []).find((x) => x.id === p.id && x.status === "PROPOSED") : null;
+    if (!cur) { toast(fresh.ok ? "This proposal is no longer pending." : errOf(fresh), true); ok.disabled = false; reload(); return; }
+    const amount = (S.amt[p.id] || "").trim();
+    const msg = "Approve " + cur.side.toUpperCase() + " @ " + cur.price_cents + "¢, qty " + cur.quantity + ", " + (amount ? "$" + amount + " (changed)" : usd(cur.amount_usd)) + ", est. fee " + usd(cur.est_fee_usd) + "?" + (cur.mode === "LIVE" ? "\n\nLIVE — REAL FUNDS" : "");
+    if (!confirm(msg)) { ok.disabled = false; return; }
+    const r = await post("/v1/proposals/" + encodeURIComponent(p.id) + "/approve", amount ? { amount_usd: amount } : {}, true);
+    if (r.ok) { delete S.amt[p.id]; toast("Approved ✓"); } else { toast(errOf(r), true); ok.disabled = false; }
+    refreshStatus(); reload();
+  };
+  no.onclick = async () => {
+    if (!confirm("Reject this proposal?")) return;
+    const r = await post("/v1/proposals/" + encodeURIComponent(p.id) + "/reject");
+    toast(r.ok ? "Rejected" : errOf(r), !r.ok); refreshStatus(); reload();
+  };
+  c.append(el("div", { style: "margin-top:12px" }, amt), el("div", { class: "row", style: "margin-top:10px" }, ok, no));
+  return c;
 }
-
-function fillList(id, items, build, empty) {
-  const box = $(id);
-  box.replaceChildren();
-  if (!items.length) { box.append(el("div", { className: "mut", textContent: empty })); return; }
-  items.forEach((i) => box.append(build(i)));
-}
-
-async function refresh() {
-  const [st, pr, po, od, lm] = await Promise.all([
-    api("/v1/status"), api("/v1/proposals"), api("/v1/positions"), api("/v1/orders"), api("/v1/limits"),
-  ]);
-  if (!st.ok) return;
-  const s = st.data;
-  $("mode").textContent = s.mode;
-  $("mode").className = "tag " + (s.mode === "LIVE" ? "live" : "paper");
-  $("pausedTag").classList.toggle("hidden", !s.paused);
-  $("exposure").textContent = usd(s.exposure);
-  $("pnl").textContent = usd(s.daily_pnl);
-  $("pending").textContent = s.pending_proposals;
-  $("active-rules").textContent = s.active_rules || 0;
-  $("pauseBtn").disabled = s.paused;
-  $("resumeBtn").disabled = !s.paused;
-
-  fillList("proposals", pr.data || [], proposalCard, "No proposals yet.");
-  fillList("positions", po.data || [], (p) => el("div", { className: "card",
-    textContent: p.side + " " + p.quantity + " @ " + p.avg_price_cents + "c · cost " + usd(p.cost_usd) + " · " + p.market_id }), "No open positions.");
-  fillList("orders", od.data || [], (o) => el("div", { className: "card",
-    textContent: (o.status || o.state) + " · " + o.side + " " + o.quantity + " @ " + o.price_cents + "c · filled " + o.filled_qty }), "No orders.");
-
-  const box = $("limits");
-  box.replaceChildren();
-  (lm.data || []).forEach((l) => box.append(el("div", { className: "row" },
-    el("span", { className: "grow", textContent: l.name }),
-    el("b", { textContent: String(l.value) }),
-    el("span", { className: "mut", textContent: "max " + l.hard_max }))));
-}
-
-async function loadLlm() {
-  const r = await api("/v1/llm");
-  if (!r.ok) return;
-  $("llmInfo").textContent = r.data.configured
-    ? r.data.model + " @ " + r.data.base_url : "Not configured (set LLM_API_KEY and LLM_MODEL)";
-}
-$("llmTest").onclick = async () => {
-  $("llmMsg").textContent = "Testing...";
-  const r = await api("/v1/llm/test", { method: "POST", body: "{}" });
-  $("llmMsg").textContent = r.ok ? "LLM OK: " + JSON.stringify(r.data.reply)
-    : ((r.error && r.error.message) || "LLM test failed");
+VIEWS.proposals = (v) => {
+  setHead("Proposals", "Review and decide");
+  const list = el("div"); v.append(list);
+  const alive = mount(async () => {
+    const r = await api("/v1/proposals?status=pending");
+    if (!alive()) return;
+    if (!r.ok) { list.replaceChildren(el("div", { class: "err", textContent: errOf(r) })); return; }
+    const items = (r.data || []).filter((p) => p.status === "PROPOSED");
+    list.replaceChildren(...(items.length ? items.map((p) => proposalCard(p, S.reload)) : [card(empty("Nothing waiting", "New trade proposals from the agent will show up here."))]));
+  });
 };
 
-// ── Fixtures tab ─────────────────────────────────────────────
-async function loadFixtures(state) {
-  currentFxState = state;
-  const path = "/v1/fixtures" + (state ? "?state=" + state : "");
-  const r = await api(path);
-  const box = $("fixtures-list");
-  box.replaceChildren();
-  if (!r.ok) { box.append(el("div", { className: "err", textContent: (r.error && r.error.message) || "Failed to load" })); return; }
-  const items = r.data || [];
-  if (!items.length) { box.append(el("div", { className: "mut card", textContent: "No fixtures found." })); return; }
-  items.forEach((fx) => {
-    const badge = el("span", { className: "badge " + fx.state, textContent: fx.state.toUpperCase() });
-    const score = (fx.home_score != null && fx.away_score != null)
-      ? ` ${fx.home_score}–${fx.away_score}${fx.minute ? " " + fx.minute + "'" : ""}` : "";
-    const kickoff = fx.kickoff_dhaka
-      ? " · " + new Date(fx.kickoff_dhaka).toLocaleString("en-BD", { timeZone: "Asia/Dhaka", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })
-      : "";
-    const row = el("div", { className: "card fixture-row" },
-      badge,
-      el("span", { textContent: (fx.home_team || "?") + " vs " + (fx.away_team || "?") + score + kickoff }),
-    );
-    box.append(row);
+// ── Position: positions · orders · exit rules ──
+function orderTone(state) {
+  const s = String(state).toUpperCase();
+  return s === "FILLED" ? "long" : ["REJECTED", "FAILED", "UNKNOWN"].includes(s) ? "short" : s.includes("DELAY") ? "alert" : ["CANCELLED", "CANCELED", "EXPIRED"].includes(s) ? "" : "neutral";
+}
+VIEWS.position = (v) => {
+  setHead("Position", "Positions, orders and exit rules");
+  const list = el("div");
+  v.append(seg([["positions", "Positions"], ["orders", "Orders"], ["rules", "Rules"]], S.seg.pos, (x) => { S.seg.pos = x; render(); }), list);
+  const alive = mount(async () => {
+    const kind = S.seg.pos;
+    const r = await api(kind === "positions" ? "/v1/positions" : kind === "orders" ? "/v1/orders" : "/v1/rules");
+    if (!alive()) return;
+    if (!r.ok) { list.replaceChildren(el("div", { class: "err", textContent: errOf(r) })); return; }
+    const items = r.data || [];
+    if (kind === "positions") {
+      const open = items.filter((p) => String(p.status).toUpperCase() !== "CLOSED");
+      list.replaceChildren(...(open.length ? open.map((p) => card(
+        el("div", { class: "row" }, sideChip(p.side), chip(p.status), el("span", { class: "grow" }), el("span", { class: "note", textContent: dt(p.opened_at) })),
+        el("div", { class: "stats", style: "margin-top:12px" }, stat("Quantity", String(p.quantity)), stat("Avg price", p.avg_price_cents + "¢"), stat("Cost", usd(p.cost_usd))),
+        el("div", { class: "note truncate", style: "margin-top:8px", textContent: p.market_id }),
+        el("button", { class: "btn block", style: "margin-top:10px", textContent: "Close position", onclick: async () => {
+          if (!confirm("Create an exit proposal for " + p.side.toUpperCase() + " " + p.quantity + " shares?\n\nYou will still approve it from Home.")) return;
+          const res = await post("/v1/positions/" + encodeURIComponent(p.market_id) + "/close", {}, true);
+          toast(res.ok ? "Exit proposal created — review it on Home" : errOf(res), !res.ok); refreshStatus();
+        } }))) : [card(empty("No open positions", "Filled trades will appear here."))]));
+    } else if (kind === "orders") {
+      list.replaceChildren(...(items.length ? items.map((o) => {
+        const st = o.state || o.status || "?";
+        return card(
+          el("div", { class: "row" }, sideChip(String(o.side).toLowerCase()), chip(st, orderTone(st)), o.reduce_only ? chip("reduce-only") : null, el("span", { class: "grow" }), el("span", { class: "note", textContent: dt(o.created_at) })),
+          el("div", { class: "stats", style: "margin-top:12px" }, stat("Price", o.price_cents + "¢"), stat("Quantity", String(o.quantity)), stat("Filled", String(o.filled_qty))),
+          TERMINAL.includes(String(st).toUpperCase()) ? null : el("button", { class: "btn short block", style: "margin-top:10px", textContent: "Cancel order", onclick: async () => {
+            if (!confirm("Cancel this open order?")) return;
+            const res = await post("/v1/orders/" + encodeURIComponent(o.id) + "/cancel", {}, true);
+            toast(res.ok ? "Order cancelled" : errOf(res), !res.ok); S.reload();
+          } }));
+      }) : [card(empty("No orders", "Orders the agent places will show up here."))]));
+    } else {
+      list.replaceChildren(...(items.length ? items.map(ruleCard) : [card(empty("No rules", "Ask the agent in Chat to set a take-profit or stop-loss exit rule."))]));
+    }
   });
+};
+function ruleCard(rule) {
+  const tone = rule.status === "ACTIVE" ? "long" : rule.status === "PENDING" ? "alert" : rule.status === "BLOCKED" || rule.status === "FAILED" ? "short" : "";
+  const c = card(
+    el("div", { class: "row" }, el("b", { class: "grow", textContent: rule.kind + " — " + rule.trigger_type + " @ " + rule.trigger_value }), chip(rule.status, tone)),
+    el("div", { class: "note", style: "margin-top:4px", textContent: "size " + rule.size + " · via " + rule.created_via }),
+    el("div", { class: "note truncate", textContent: rule.market_id }),
+    rule.last_eval_note ? el("div", { class: "note", style: "margin-top:4px", textContent: rule.last_eval_note }) : null);
+  const acts = el("div", { class: "row", style: "margin-top:10px" });
+  if (rule.status === "PENDING") acts.append(el("button", { class: "btn long grow", textContent: "Confirm rule", onclick: async () => {
+    if (!confirm("Activate this exit rule? It will trade automatically when triggered.")) return;
+    const r = await post("/v1/rules/" + encodeURIComponent(rule.id) + "/confirm", {}, true);
+    toast(r.ok ? "Rule active" : errOf(r), !r.ok); S.reload && S.reload(); refreshStatus();
+  } }));
+  if (rule.status === "PENDING" || rule.status === "ACTIVE") acts.append(el("button", { class: "btn short grow", textContent: "Cancel", onclick: async () => {
+    const r = await post("/v1/rules/" + encodeURIComponent(rule.id) + "/cancel");
+    toast(r.ok ? "Rule cancelled" : errOf(r), !r.ok); S.reload && S.reload(); refreshStatus();
+  } }));
+  if (acts.childElementCount) c.append(acts);
+  return c;
 }
 
-// ── Rules tab ────────────────────────────────────────────────
-async function loadRules(status) {
-  const path = "/v1/rules" + (status ? "?status=" + status : "");
-  const r = await api(path);
-  const box = $("rules-list");
-  box.replaceChildren();
-  if (!r.ok) { box.append(el("div", { className: "err", textContent: (r.error && r.error.message) || "Failed" })); return; }
-  const rules = r.data || [];
-  if (!rules.length) { box.append(el("div", { className: "mut card", textContent: "No rules found. Use chat to create exit rules." })); return; }
-  rules.forEach((rule) => {
-    const statusEl = el("span", { textContent: rule.status });
-    statusEl.className = "rule-status " + rule.status;
-    const card = el("div", { className: "card" },
-      el("div", { className: "row" },
-        el("b", { className: "grow", textContent: rule.kind + " — " + rule.trigger_type + " @ " + rule.trigger_value }),
-        statusEl,
-      ),
-      el("div", { className: "mut", textContent: "market: " + rule.market_id + " · size: " + rule.size + " · via: " + rule.created_via }),
-    );
-    if (rule.last_eval_note) {
-      card.append(el("div", { className: "mut", style: "font-size:12px;margin-top:4px", textContent: rule.last_eval_note }));
-    }
-    const actions = el("div", { className: "row", style: "margin-top:8px;gap:6px" });
-    if (rule.status === "PENDING") {
-      const confirmBtn = el("button", { className: "ok", textContent: "Confirm Rule" });
-      confirmBtn.onclick = async () => {
-        const h = confirmHeader("Confirm this exit rule?");
-        if (!h) return;
-        const res = await api(`/v1/rules/${rule.id}/confirm`, { method: "POST", body: "{}", headers: h });
-        $("msg").textContent = res.ok ? "" : ((res.error && res.error.message) || "Failed");
-        loadRules(null);
-      };
-      actions.append(confirmBtn);
-    }
-    if (["PENDING", "ACTIVE"].includes(rule.status)) {
-      const cancelBtn = el("button", { className: "bad", textContent: "Cancel" });
-      cancelBtn.onclick = async () => {
-        await api(`/v1/rules/${rule.id}/cancel`, { method: "POST", body: "{}" });
-        loadRules(null);
-      };
-      actions.append(cancelBtn);
-    }
-    if (actions.children.length) card.append(actions);
-    box.append(card);
-  });
-}
+// ── Settings ──
+VIEWS.settings = (v) => {
+  setHead("Settings", "");
+  const trade = el("div"), limits = el("div"), devs = el("div"), llm = el("div");
+  v.append(section("Trading"), trade, section("Limits"), limits, section("Devices"), devs, section("Language model"), llm,
+    section("Account"), card(el("button", { class: "btn block", onclick: () => { if (confirm("Sign out of this browser?")) logout(); } }, "Log out")));
+  const paintTrade = () => {
+    const s = S.status || {};
+    trade.replaceChildren(card(kv("Mode", s.mode || "—"), kv("Auth", s.auth_mode || "—"), kv("Data feeds", s.feeds_ok ? "connected" : "offline"), kv("Agent", s.paused ? "paused" : "running"),
+      el("button", { class: "btn block " + (s.paused ? "long" : ""), style: "margin-top:12px", textContent: s.paused ? "Resume agent" : "Pause agent", disabled: !S.status, onclick: async () => {
+        if (!confirm(s.paused ? "Resume the agent?" : "Pause the agent? No new proposals will be created.")) return;
+        const r = await post(s.paused ? "/v1/resume" : "/v1/pause", {}, true);
+        toast(r.ok ? (s.paused ? "Resumed" : "Paused") : errOf(r), !r.ok); await refreshStatus(); paintTrade();
+      } })));
+  };
+  paintTrade();
+  (async () => {
+    const [l, d, m] = await Promise.all([api("/v1/limits"), api("/v1/devices"), api("/v1/llm")]);
+    const rows = l.ok ? l.data || [] : [];
+    limits.replaceChildren(card(...(rows.length ? rows.map((lim) => {
+      const inp = el("input", { class: "mono", type: "number", step: "any", value: String(lim.value), style: "max-width:120px", "aria-label": lim.name });
+      return el("div", { class: "kv", style: "align-items:center" }, el("span", { textContent: lim.name + " (max " + lim.hard_max + ")" }), el("span", { class: "row" }, inp,
+        el("button", { class: "btn", textContent: "Save", onclick: async () => {
+          const val = parseFloat(inp.value);
+          if (isNaN(val)) { toast("Invalid amount", true); return; }
+          if (!confirm("Set " + lim.name + " to " + val + "?")) return;
+          const r = await api("/v1/limits", { method: "PUT", body: JSON.stringify({ [lim.name]: val }), headers: GATE });
+          toast(r.ok ? "Saved ✓" : errOf(r), !r.ok);
+        } })));
+    }) : [empty(l.ok ? "No limits loaded" : errOf(l))])));
+    const devices = d.ok && d.data ? d.data.devices || [] : [];
+    const when = (n) => (n ? dt(new Date(n > 1e12 ? n : n * 1000).toISOString()) : "never");
+    devs.replaceChildren(card(...(devices.length ? devices.map((x) => el("div", { class: "kv", style: "align-items:center" },
+      el("span", null, el("b", { textContent: x.name || x.id }), el("div", { class: "note", textContent: x.revoked_at ? "revoked" : "last seen " + when(x.last_seen) })),
+      x.revoked_at ? null : el("button", { class: "btn short", textContent: "Revoke", onclick: async () => {
+        if (!confirm("Revoke “" + (x.name || x.id) + "”? It will be signed out.")) return;
+        const r = await api("/v1/devices/" + encodeURIComponent(x.id), { method: "DELETE", headers: GATE });
+        toast(r.ok ? "Revoked" : errOf(r), !r.ok); render();
+      } }))) : [empty("No paired devices")])));
+    const msg = el("div", { class: "note", style: "margin-top:8px" });
+    llm.replaceChildren(card(el("div", { class: "row" }, el("span", { class: "grow note", textContent: m.ok && m.data ? (m.data.configured ? m.data.model + " @ " + m.data.base_url : "Not configured (set LLM_API_KEY and LLM_MODEL)") : "—" }),
+      el("button", { class: "btn", textContent: "Test", onclick: async () => {
+        msg.textContent = "Testing…";
+        const r = await post("/v1/llm/test");
+        msg.textContent = r.ok ? "LLM OK: " + JSON.stringify(r.data.reply) : errOf(r);
+      } })), msg));
+  })();
+};
 
-// ── Chat tab ─────────────────────────────────────────────────
+// ── Chat (built once, kept alive across tab switches) ──
+function buildChat() {
+  const box = el("div", { class: "msgs" });
+  const input = el("textarea", { placeholder: "Chat in Bengali, Banglish or English…", rows: 1, enterKeyHint: "send" });
+  const send = el("button", { class: "btn primary", textContent: "Send" });
+  const status = el("div", { class: "note", style: "min-height:16px" });
+  const chips = [["🟢 Live", "ekhon live match ki ki ache?"], ["🕐 Upcoming", "upcoming match gulo dekhao"], ["📊 Positions", "আমার positions দেখাও"], ["📋 Rules", "sob rules dekhao"], ["⚙️ Status", "/status"]];
+  const wrap = el("div", { class: "chatwrap" }, box,
+    el("div", { class: "chips" }, chips.map(([l, t]) => el("button", { textContent: l, onclick: () => sendChatMessage(t) }))),
+    status,
+    el("div", { class: "inputrow" }, input, send, el("button", { class: "btn ghost", textContent: "Clear", title: "Clear chat", onclick: clearChat })));
+  chat = { wrap, box, input, send, status };
+  send.onclick = () => sendChatMessage(input.value);
+  input.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendChatMessage(input.value); } });
+  appendChatMsg("assistant", "Assalamu Alaikum! 🏟️ PRED Agent here. আমি বাংলা, Banglish বা English এ কথা বলতে পারি।\n\nজিজ্ঞেস করুন: live match, positions, rules, বা trade/rule তৈরির জন্য।");
+}
+async function clearChat() {
+  if (chatSessionId) { await api("/v1/chat/" + encodeURIComponent(chatSessionId), { method: "DELETE" }); chatSessionId = null; }
+  chat.box.replaceChildren(); appendChatMsg("assistant", "Chat cleared. How can I help?");
+}
+VIEWS.chat = (v) => {
+  setHead("Chat", "Ask the agent anything");
+  if (!chat) buildChat();
+  v.append(chat.wrap);
+  chat.box.scrollTop = chat.box.scrollHeight;
+};
 function appendChatMsg(role, text, cards) {
-  const box = $("chat-messages");
-  const msg = el("div", { className: "chat-msg " + role });
-  const roleLabel = el("div", { className: "role", textContent: role === "user" ? "You" : "Agent" });
-  // Use textContent always — NEVER innerHTML with dynamic model output (XSS guard)
-  const content = el("div");
-  content.textContent = text;
-  msg.append(roleLabel, content);
-
-  if (cards && cards.length) {
-    cards.forEach((card) => {
-      const cardEl = renderCard(card);
-      if (cardEl) msg.append(cardEl);
-    });
-  }
-
-  box.append(msg);
-  box.scrollTop = box.scrollHeight;
+  const msg = el("div", { class: "msg " + role }, el("div", { class: "who", textContent: role === "user" ? "You" : "Agent" }), el("div", { textContent: text }));
+  (cards || []).forEach((c) => { const ce = renderCard(c); if (ce) msg.append(ce); });
+  chat.box.append(msg); chat.box.scrollTop = chat.box.scrollHeight;
 }
-
 function renderCard(card) {
-  const wrap = el("div", { className: "chat-card" });
+  const wrap = el("div", { class: "ccard" });
+  const d = card.data || {};
+  const done = (btn, r, okText, failText) => { btn.disabled = true; btn.textContent = r.ok ? okText : failText || "Failed"; };
   if (card.type === "fixture_list") {
     wrap.append(el("h4", { textContent: "Fixtures" }));
-    const items = (card.data && card.data.fixtures) || [];
-    items.slice(0, 8).forEach((fx) => {
-      const badge = el("span", { className: "badge " + (fx.state || ""), textContent: (fx.state || "?").toUpperCase() });
-      const row = el("div", { className: "fixture-row" });
-      row.append(badge);
-      const label = document.createTextNode((fx.home_team || "?") + " vs " + (fx.away_team || "?"));
-      row.append(label);
-      wrap.append(row);
-    });
+    (d.fixtures || []).slice(0, 8).forEach((fx) => wrap.append(el("div", { class: "frow" }, chip((fx.state || "?").toUpperCase(), fx.state === "live" ? "short" : "neutral"), " " + (fx.home_team || "?") + " vs " + (fx.away_team || "?"))));
     return wrap;
   }
   if (card.type === "rule") {
-    const d = card.data || {};
-    wrap.append(el("h4", { textContent: "Exit Rule" }));
-    wrap.append(el("div", { textContent: d.kind + " — " + d.trigger_type + " @ " + d.trigger_value + " (size: " + d.size + ")" }));
+    wrap.append(el("h4", { textContent: "Exit rule" }), el("div", { textContent: d.kind + " — " + d.trigger_type + " @ " + d.trigger_value + " (size: " + d.size + ")" }));
     if (d.status === "PENDING") {
-      const actions = el("div", { className: "card-actions" });
-      const confirmBtn = el("button", { className: "ok", textContent: "✓ Confirm Rule" });
-      confirmBtn.onclick = async () => {
-        const h = confirmHeader("Confirm this exit rule?");
-        if (!h) return;
-        const r = await api(`/v1/rules/${d.id}/confirm`, { method: "POST", body: "{}", headers: h });
-        confirmBtn.disabled = true;
-        confirmBtn.textContent = r.ok ? "Confirmed ✓" : "Failed";
-        if (r.ok) loadRules(null);
-      };
-      const cancelBtn = el("button", { className: "bad", textContent: "✗ Cancel" });
-      cancelBtn.onclick = async () => {
-        await api(`/v1/rules/${d.id}/cancel`, { method: "POST", body: "{}" });
-        cancelBtn.disabled = true; cancelBtn.textContent = "Cancelled";
-      };
-      actions.append(confirmBtn, cancelBtn);
-      wrap.append(actions);
+      const ok = el("button", { class: "btn long", textContent: "✓ Confirm rule" }), no = el("button", { class: "btn short", textContent: "✗ Cancel" });
+      ok.onclick = async () => { if (!confirm("Confirm this exit rule?")) return; const r = await post("/v1/rules/" + encodeURIComponent(d.id) + "/confirm", {}, true); done(ok, r, "Confirmed ✓"); refreshStatus(); };
+      no.onclick = async () => { const r = await post("/v1/rules/" + encodeURIComponent(d.id) + "/cancel"); done(no, r, "Cancelled"); };
+      wrap.append(el("div", { class: "actions" }, ok, no));
     }
     return wrap;
   }
   if (card.type === "proposal") {
-    const d = card.data || {};
-    wrap.append(el("h4", { textContent: "Trade Proposal" }));
-    wrap.append(el("div", { textContent: d.side + " @ " + d.price_cents + "¢ · " + d.amount_usd + " USD · " + d.edge_pp + "pp edge" }));
+    wrap.append(el("h4", { textContent: "Trade proposal" }), el("div", { textContent: d.side + " @ " + d.price_cents + "¢ · " + d.amount_usd + " USD · " + d.edge_pp + "pp edge" }));
     if (d.status === "PROPOSED") {
-      const actions = el("div", { className: "card-actions" });
-      const okBtn = el("button", { className: "ok", textContent: "✓ Approve" });
-      okBtn.onclick = async () => {
-        const h = confirmHeader("Approve this trade proposal?");
-        if (!h) return;
-        const r = await api(`/v1/proposals/${d.id}/approve`, { method: "POST", body: "{}", headers: h });
-        okBtn.disabled = true;
-        okBtn.textContent = r.ok ? "Approved ✓" : "Failed";
-        if (r.ok) refresh();
-      };
-      const noBtn = el("button", { className: "bad", textContent: "✗ Reject" });
-      noBtn.onclick = async () => {
-        await api(`/v1/proposals/${d.id}/reject`, { method: "POST", body: "{}" });
-        noBtn.disabled = true; noBtn.textContent = "Rejected";
-      };
-      actions.append(okBtn, noBtn);
-      wrap.append(actions);
+      const ok = el("button", { class: "btn long", textContent: "✓ Approve" }), no = el("button", { class: "btn short", textContent: "✗ Reject" });
+      ok.onclick = async () => { if (!confirm("Approve this trade proposal?")) return; const r = await post("/v1/proposals/" + encodeURIComponent(d.id) + "/approve", {}, true); done(ok, r, "Approved ✓"); refreshStatus(); };
+      no.onclick = async () => { const r = await post("/v1/proposals/" + encodeURIComponent(d.id) + "/reject"); done(no, r, "Rejected"); refreshStatus(); };
+      wrap.append(el("div", { class: "actions" }, ok, no));
     }
     return wrap;
   }
   if (card.type === "action") {
-    const d = card.data || {};
-    wrap.append(el("h4", { textContent: "Action Required" }));
-    wrap.append(el("div", { textContent: d.label || "Confirm this action?" }));
-    const actions = el("div", { className: "card-actions" });
-    const goBtn = el("button", { className: "bad", textContent: "Confirm" });
-    goBtn.onclick = async () => {
-      const h = confirmHeader(d.label || "Confirm this action?");
-      if (!h) return;
+    wrap.append(el("h4", { textContent: "Action required" }), el("div", { textContent: d.label || "Confirm this action?" }));
+    const go2 = el("button", { class: "btn short", textContent: "Confirm" });
+    go2.onclick = async () => {
+      if (!confirm(d.label || "Confirm this action?")) return;
       let r;
-      if (d.action === "pause") r = await api("/v1/pause", { method: "POST", body: "{}", headers: h });
-      else if (d.action === "panic") r = await api("/v1/panic", { method: "POST", body: "{}", headers: h });
-      else if (d.action === "cancel_order") r = await api(`/v1/orders/${d.order_id}/cancel`, { method: "POST", body: "{}", headers: h });
-      else if (d.action === "cancel_rule") r = await api(`/v1/rules/${d.rule_id}/cancel`, { method: "POST", body: "{}", headers: h });
+      if (d.action === "pause") r = await post("/v1/pause", {}, true);
+      else if (d.action === "panic") r = await post("/v1/panic", {}, true);
+      else if (d.action === "cancel_order") r = await post("/v1/orders/" + encodeURIComponent(d.order_id) + "/cancel", {}, true);
+      else if (d.action === "cancel_rule") r = await post("/v1/rules/" + encodeURIComponent(d.rule_id) + "/cancel", {}, true);
       else return;
-      goBtn.disabled = true;
-      goBtn.textContent = r.ok ? "Done ✓" : "Failed";
-      refresh();
-      loadRules(null);
+      done(go2, r, "Done ✓"); refreshStatus();
     };
-    actions.append(goBtn);
-    wrap.append(actions);
+    wrap.append(el("div", { class: "actions" }, go2));
     return wrap;
   }
   return null;
 }
-
 async function sendChatMessage(text) {
-  if (!text.trim()) return;
+  if (!text || !text.trim() || !chat || chat.send.disabled) return;
   appendChatMsg("user", text);
-  $("chat-input").value = "";
-  $("chat-send").disabled = true;
-  $("chat-status").textContent = "Thinking…";
-
-  // Placeholder assistant bubble that fills in as tokens arrive.
-  // textContent only — NEVER innerHTML with model output (XSS guard).
+  chat.input.value = ""; chat.send.disabled = true; chat.status.textContent = "Thinking…";
   appendChatMsg("assistant", "");
-  const box = $("chat-messages");
-  const bubble = box.lastElementChild;
-  const body = bubble.children[1];
-  const cardEls = [];
-  let acc = "";
-  let finished = false;
-
-  const finish = () => {
-    $("chat-send").disabled = false;
-    $("chat-status").textContent = "";
-  };
-  const fail = (msg) => {
-    body.textContent = msg;
-    finish();
-  };
-
+  const box = chat.box, bubble = box.lastElementChild, body = bubble.children[1];
+  let acc = "", finished = false;
+  const finish = () => { chat.send.disabled = false; chat.status.textContent = ""; };
+  const fail = (m) => { body.textContent = m; finish(); };
   let resp;
   try {
     const headers = { "Content-Type": "application/json" };
     if (token) headers.Authorization = "Bearer " + token;
-    resp = await fetch("/v1/chat/stream", {
-      method: "POST", headers,
-      body: JSON.stringify({ message: text, session_id: chatSessionId }),
-    });
-  } catch (_) {
-    return fail("❌ Cannot reach the server.");
-  }
-
-  if (resp.status === 401 && token) { signOut(); return fail("❌ Session expired."); }
+    resp = await fetch("/v1/chat/stream", { method: "POST", headers, body: JSON.stringify({ message: text, session_id: chatSessionId }) });
+  } catch (_) { return fail("❌ Cannot reach the server."); }
+  if (resp.status === 401 && token) { signOut(); return; }
   if (!resp.ok || !resp.body) {
-    let err = {};
-    try { err = (await resp.json()).error || {}; } catch (_) {}
+    let err = {}; try { err = (await resp.json()).error || {}; } catch (_) {}
     if (err.code === "rate_limited") return fail("⚠️ একটু ধীরে — বেশি বার্তা পাঠাচ্ছেন। একটু অপেক্ষা করুন।");
     return fail("❌ " + (err.message || "Error occurred."));
   }
-
   const handle = (event, d) => {
-    if (event === "session") {
-      if (!chatSessionId) chatSessionId = d.session_id;
-    } else if (event === "delta") {
-      acc += d.text;
-      body.textContent = acc;
-      $("chat-status").textContent = "";
-      box.scrollTop = box.scrollHeight;
-    } else if (event === "tool") {
-      $("chat-status").textContent = "Using tool: " + (d.name || "…");
-    } else if (event === "reset") {
-      acc = "";
-      body.textContent = "";
-    } else if (event === "cards") {
-      (d.cards || []).forEach((card) => {
-        const cardEl = renderCard(card);
-        if (cardEl) { bubble.append(cardEl); cardEls.push(cardEl); }
-      });
-      box.scrollTop = box.scrollHeight;
-    } else if (event === "done") {
+    if (event === "session") { if (!chatSessionId) chatSessionId = d.session_id; }
+    else if (event === "delta") { acc += d.text; body.textContent = acc; chat.status.textContent = ""; box.scrollTop = box.scrollHeight; }
+    else if (event === "tool") chat.status.textContent = "Using tool: " + (d.name || "…");
+    else if (event === "reset") { acc = ""; body.textContent = ""; }
+    else if (event === "cards") { (d.cards || []).forEach((c) => { const ce = renderCard(c); if (ce) bubble.append(ce); }); box.scrollTop = box.scrollHeight; }
+    else if (event === "done") {
       finished = true;
       if (d.session_id && !chatSessionId) chatSessionId = d.session_id;
-      if (d.error === "llm_not_configured") {
-        body.textContent = "⚠️ LLM কনফিগার করা নেই। সার্ভারে LLM_API_KEY এবং LLM_MODEL সেট করুন।";
-      } else if (d.error) {
-        body.textContent = "❌ " + (d.reply || "Error occurred.");
-      } else {
-        body.textContent = d.reply || acc;
-      }
+      if (d.error === "llm_not_configured") body.textContent = "⚠️ LLM কনফিগার করা নেই। সার্ভারে LLM_API_KEY এবং LLM_MODEL সেট করুন।";
+      else if (d.error) body.textContent = "❌ " + (d.reply || "Error occurred.");
+      else body.textContent = d.reply || acc;
       box.scrollTop = box.scrollHeight;
     }
   };
-
   try {
-    const reader = resp.body.getReader();
-    const dec = new TextDecoder();
+    const reader = resp.body.getReader(), dec = new TextDecoder();
     let buf = "";
     for (;;) {
       const { value, done } = await reader.read();
@@ -655,46 +754,39 @@ async function sendChatMessage(text) {
       buf += dec.decode(value, { stream: true });
       let i;
       while ((i = buf.indexOf("\n\n")) !== -1) {
-        const frame = buf.slice(0, i);
-        buf = buf.slice(i + 2);
+        const frame = buf.slice(0, i); buf = buf.slice(i + 2);
         let ev = "message", data = "";
         for (const line of frame.split("\n")) {
-          if (line.startsWith("event:")) ev = line.slice(6).trim();
-          else if (line.startsWith("data:")) data += line.slice(5).trim();
+          if (line.startsWith("event:")) ev = line.slice(6).trim(); else if (line.startsWith("data:")) data += line.slice(5).trim();
         }
         if (!data) continue;
         try { handle(ev, JSON.parse(data)); } catch (_) {}
       }
     }
-  } catch (_) {
-    if (!finished) body.textContent = (acc ? acc + "\n\n" : "") + "⚠️ Connection lost.";
-  }
+  } catch (_) { if (!finished) body.textContent = (acc ? acc + "\n\n" : "") + "⚠️ Connection lost."; }
   if (!finished && !acc) body.textContent = "⚠️ No reply received.";
   finish();
 }
 
-function sendChip(text) {
-  sendChatMessage(text);
-  showTab("chat");
-}
-
-$("chat-send").onclick = () => sendChatMessage($("chat-input").value);
-$("chat-input").addEventListener("keydown", (e) => {
-  if (e.key === "Enter" && !e.shiftKey) {
-    e.preventDefault();
-    sendChatMessage($("chat-input").value);
-  }
-});
-$("chat-clear").onclick = async () => {
-  if (chatSessionId) {
-    await api(`/v1/chat/${chatSessionId}`, { method: "DELETE" });
-    chatSessionId = null;
-  }
-  $("chat-messages").replaceChildren();
-  appendChatMsg("assistant", "Chat cleared. How can I help?");
+// ── Panic: always one tap away; the sheet is the two-step confirmation ──
+$("panicTop").onclick = () => {
+  const live = S.status && S.status.mode === "LIVE";
+  $("panicNote").textContent = live ? "LIVE mode — real funds. Open orders will be cancelled on PRED." : "PAPER mode — simulated orders only.";
+  $("sheet").classList.remove("hidden"); $("panicNo").focus();
 };
+$("panicNo").onclick = () => $("sheet").classList.add("hidden");
+$("sheet").addEventListener("click", (e) => { if (e.target === $("sheet")) $("sheet").classList.add("hidden"); });
+$("panicYes").onclick = async () => {
+  $("panicYes").disabled = true;
+  const r = await post("/v1/panic", {}, true);
+  $("panicYes").disabled = false; $("sheet").classList.add("hidden");
+  toast(r.ok ? "Panic done — agent paused, orders cancelled" : errOf(r), !r.ok);
+  await refreshStatus(); if (S.reload) S.reload();
+};
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") $("sheet").classList.add("hidden"); });
 
-if (token) { showApp(); } else { $("login").classList.remove("hidden"); }
+buildChrome();
+if (token) showApp(); else $("login").classList.remove("hidden");
 </script>
 </body>
 </html>
