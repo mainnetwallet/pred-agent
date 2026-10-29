@@ -377,8 +377,8 @@ async def _cmd_approve(ctx: CommandContext, args: list[str]) -> CmdResult:
         return _err("usage: `/approve <proposal id> [usd]`")
     pending = ctx.controller.list_proposals("PROPOSED")
     pid, err = _resolve(args[0], [p.id for p in pending], "pending proposal")
-    if err:
-        return _err(err)
+    if err or pid is None:
+        return _err(err or "no pending proposal found")
     amount: Decimal | None = None
     if len(args) == 2:
         amount = _dec(args[1])
@@ -403,8 +403,8 @@ async def _cmd_reject(ctx: CommandContext, args: list[str]) -> CmdResult:
         return _err("usage: `/reject <proposal id>`")
     pending = ctx.controller.list_proposals("PROPOSED")
     pid, err = _resolve(args[0], [p.id for p in pending], "pending proposal")
-    if err:
-        return _err(err)
+    if err or pid is None:
+        return _err(err or "no pending proposal found")
     done = ctx.controller.reject(pid, via="chat")
     if done is None:
         return _err("proposal missing or already decided")
@@ -417,8 +417,8 @@ async def _cmd_confirm(ctx: CommandContext, args: list[str]) -> CmdResult:
         return _err("usage: `/confirm <rule id>`")
     pending = ctx.controller.rules.list_pending()
     rid, err = _resolve(args[0], [r.id for r in pending], "pending rule")
-    if err:
-        return _err(err)
+    if err or rid is None:
+        return _err(err or "no pending rule found")
     rule = next(r for r in pending if r.id == rid)
     if _live_gated(ctx):
         return CmdResult("🔒 **LIVE mode** — tap **Confirm rule** on the card.", [{"type": "rule", "data": rule.to_dict()}])
@@ -427,6 +427,24 @@ async def _cmd_confirm(ctx: CommandContext, args: list[str]) -> CmdResult:
         return _err("rule not found, not PENDING, or max active rules reached")
     await ctx.publish(Event("rule_updated", done.to_dict()))
     return CmdResult(f"✅ Rule `{_short(rid)}` is now **ACTIVE**.", [{"type": "rule", "data": done.to_dict()}])
+
+
+async def _cancel_order(ctx: CommandContext, oid: str) -> CmdResult:
+    if _live_gated(ctx):
+        return CmdResult("🔒 **LIVE mode** — tap Confirm to cancel.",
+                         [{"type": "action", "data": {"action": "cancel_order", "order_id": oid,
+                                                      "label": f"Cancel order {_short(oid)}?"}}])
+    if not ctx.controller.executor.cancel(oid):
+        return _err("order not found or not cancellable")
+    return CmdResult(f"🚫 Order `{_short(oid)}` cancelled.")
+
+
+async def _cancel_rule(ctx: CommandContext, rid: str) -> CmdResult:
+    done = ctx.controller.cancel_rule(rid)
+    if done is None:
+        return _err("rule not found or already terminal")
+    await ctx.publish(Event("rule_updated", done.to_dict()))
+    return CmdResult(f"🚫 Rule `{_short(rid)}` cancelled.")
 
 
 async def _cmd_cancel(ctx: CommandContext, args: list[str]) -> CmdResult:
@@ -441,19 +459,9 @@ async def _cmd_cancel(ctx: CommandContext, args: list[str]) -> CmdResult:
     if oid and rid:
         return _err(f"“{ref}” matches both an order and a rule — type more of the id")
     if oid:
-        if _live_gated(ctx):
-            return CmdResult("🔒 **LIVE mode** — tap Confirm to cancel.",
-                             [{"type": "action", "data": {"action": "cancel_order", "order_id": oid,
-                                                          "label": f"Cancel order {_short(oid)}?"}}])
-        if not c.executor.cancel(oid):
-            return _err("order not found or not cancellable")
-        return CmdResult(f"🚫 Order `{_short(oid)}` cancelled.")
+        return await _cancel_order(ctx, oid)
     if rid:
-        done = c.cancel_rule(rid)
-        if done is None:
-            return _err("rule not found or already terminal")
-        await ctx.publish(Event("rule_updated", done.to_dict()))
-        return CmdResult(f"🚫 Rule `{_short(rid)}` cancelled.")
+        return await _cancel_rule(ctx, rid)
     return _err(f"no order or rule matching “{ref}”")
 
 
@@ -481,8 +489,8 @@ async def _cmd_limit(ctx: CommandContext, args: list[str]) -> CmdResult:
         return _err("usage: `/limit <name> <value>` — see `/limits`")
     names = [lim["name"] for lim in ctx.controller.limits_list()]
     name, err = _resolve(args[0], names, "limit")
-    if err:
-        return _err(err)
+    if err or name is None:
+        return _err(err or "no limit found")
     val = _dec(args[1])
     if val is None:
         return _err("value must be a number")

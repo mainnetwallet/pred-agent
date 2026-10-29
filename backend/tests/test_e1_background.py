@@ -349,7 +349,6 @@ async def test_market_not_found_backs_off_and_skips_auth_fallback(monkeypatch):
         calls["n"] += 1
         if market_id:
             feed._last_fetch_error[market_id] = 'HTTP 503: {"error":"market not found"}'
-        return None
 
     def _boom(path: str):
         raise AssertionError("authenticated fallback must not run for market-not-found")
