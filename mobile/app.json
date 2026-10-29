@@ -4,18 +4,37 @@
     "slug": "pred-agent",
     "version": "0.1.0",
     "orientation": "portrait",
+    "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0B0F14"
+    },
     "android": {
       "package": "com.mainnetwallet.predagent",
-      "userInterfaceStyle": "automatic"
+      "userInterfaceStyle": "automatic",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0B0F14"
+      }
     },
     "ios": {
       "bundleIdentifier": "com.mainnetwallet.predagent"
     },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
     "plugins": [
       "expo-secure-store",
       "expo-local-authentication",
-      "expo-notifications"
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/notification-icon.png",
+          "color": "#60A5FA"
+        }
+      ]
     ]
   }
 }

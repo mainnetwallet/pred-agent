@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/branding/pred-agent-icon.svg" alt="PRED Agent logo" width="120" height="120">
+</p>
+
 # PRED Agent — Runbook
 
 Grounded in kit/09_CONFIG_SECURITY_DEPLOY.md (Runbook section)
