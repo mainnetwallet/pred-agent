@@ -584,7 +584,15 @@ class AgentController:
     # ── orders / positions ────────────────────────────────────
 
     def orders(self) -> list[dict[str, Any]]:
-        return [to_jsonable(o) for o in self.executor.list_orders()]
+        out: list[dict[str, Any]] = []
+        for o in self.executor.list_orders():
+            d = to_jsonable(o)
+            # Paper orders carry ``status``; live orders carry ``state``. The app and the
+            # API contract read ``state`` — always provide it so clients never see it missing.
+            if isinstance(d, dict) and not d.get("state"):
+                d["state"] = str(d.get("status") or "UNKNOWN").upper()
+            out.append(d)
+        return out
 
     def positions_list(self) -> list[dict[str, Any]]:
         return [to_jsonable(p) for p in self.positions.list_positions()]

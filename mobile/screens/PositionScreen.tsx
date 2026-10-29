@@ -8,6 +8,7 @@ import { useUIStore, usePositionsStore, useOrdersStore } from "../store/index";
 import { Colors, MONO, radius, useTheme, useThemedStyles } from "../utils/theme";
 import { api } from "../services/api";
 import { formatPriceCents, formatShares, formatUsd, formatDateTime } from "../utils/format";
+import { normalizeOrders } from "../utils/normalize";
 import { Order, Position } from "../types/api";
 import { Card, EmptyState, ScreenHeader, Segmented, SideChip, StateChip, Stat } from "../components/ui";
 import { RulesPanel } from "./RulesScreen";
@@ -126,7 +127,7 @@ export const PositionScreen: React.FC = () => {
     try {
       const [p, o] = await Promise.all([api.getPositions(), api.getOrders()]);
       if (p.ok && p.data) setPositions(p.data);
-      if (o.ok && o.data) setOrders(o.data);
+      if (o.ok && o.data) setOrders(normalizeOrders(o.data));
     } catch {
       // offline: keep last data
     }
@@ -225,7 +226,7 @@ export const PositionScreen: React.FC = () => {
               <View key={`${p.market_id}-${p.side}`} style={styles.card}>
                 <View style={styles.cardHead}>
                   <SideChip side={p.side} />
-                  <StateChip label={p.status.toUpperCase()} tone="muted" />
+                  <StateChip label={String(p.status ?? "").toUpperCase()} tone="muted" />
                 </View>
                 <Text style={styles.market} numberOfLines={1}>
                   {p.market_id}

@@ -87,7 +87,10 @@ def test_approve_reject_flow(client):
     prop = _make_proposal(client)
     r = client.post(f"/v1/proposals/{prop.id}/approve", headers=h, json={})
     assert r.status_code == 200 and r.json()["data"]["status"] == "APPROVED"
-    assert len(client.get("/v1/orders", headers=h).json()["data"]) == 1  # paper order placed
+    orders = client.get("/v1/orders", headers=h).json()["data"]
+    assert len(orders) == 1  # paper order placed
+    # The app reads ``state`` (uppercase); paper orders must expose it, not only ``status``.
+    assert isinstance(orders[0]["state"], str) and orders[0]["state"] == orders[0]["state"].upper()
 
     p2 = _make_proposal(client)
     assert client.post(f"/v1/proposals/{p2.id}/reject", headers=h).status_code == 200
