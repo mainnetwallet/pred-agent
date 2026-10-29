@@ -18,7 +18,7 @@ def test_inline_script_has_valid_syntax():
     html = INDEX.read_text(encoding="utf-8")
     m = re.search(r"<script>(.*?)</script>", html, re.S)
     assert m, "no inline <script> found"
-    with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False) as f:
+    with tempfile.NamedTemporaryFile("w", encoding="utf-8", suffix=".js", delete=False) as f:
         f.write(m.group(1))
     node = shutil.which("node")
     res = subprocess.run(  # noqa: S603
