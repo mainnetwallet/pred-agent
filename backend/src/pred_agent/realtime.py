@@ -53,6 +53,7 @@ class BookFeed:
         # message key -> monotonic time of last emitted warning (log throttle).
         self._last_warned: dict[str, float] = {}
         self._running = False
+        self._client = httpx.AsyncClient(timeout=10.0)
 
     # ------------------------------------------------------------------ #
     # Public API
@@ -141,18 +142,17 @@ class BookFeed:
     async def _http_get_no_auth(self, path: str, market_id: str | None = None) -> dict[str, Any] | None:
 
         settings = load_settings()
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.get(f"{settings.host}{path}")
-            if resp.status_code >= 400:
-                self._warn_throttled(
-                    f"http:{market_id}:{resp.status_code}",
-                    "orderbook GET %s -> HTTP %s: %.200s", path, resp.status_code, resp.text,
-                )
-                if market_id:
-                    self._last_fetch_error[market_id] = f"HTTP {resp.status_code}: {resp.text[:120]}"
-                return None
-            data: dict[str, Any] = resp.json()
-            return data
+        resp = await self._client.get(f"{settings.host}{path}")
+        if resp.status_code >= 400:
+            self._warn_throttled(
+                f"http:{market_id}:{resp.status_code}",
+                "orderbook GET %s -> HTTP %s: %.200s", path, resp.status_code, resp.text,
+            )
+            if market_id:
+                self._last_fetch_error[market_id] = f"HTTP {resp.status_code}: {resp.text[:120]}"
+            return None
+        data: dict[str, Any] = resp.json()
+        return data
 
     def _normalize_and_cache(self, market_id: str, raw: dict[str, Any],
                              ws_dollars: bool) -> BookSnapshot:
@@ -245,6 +245,7 @@ class BookFeed:
 
     async def stop(self) -> None:
         self._running = False
+        await self._client.aclose()
 
     # ------------------------------------------------------------------ #
     # Unit check (startup)
