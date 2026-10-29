@@ -55,7 +55,7 @@ creates a PENDING object or a confirmation card that the HUMAN must explicitly c
   is unavailable.
 - create_rule: creates a PENDING exit rule card (human confirms/cancels). A position must exist.
 - close_position: creates a PENDING close-position proposal card.
-- cancel_order / cancel_rule / request_pause / request_panic: return an ACTION confirmation card
+- cancel_order / cancel_rule / request_pause / request_resume / request_panic: return an ACTION confirmation card
   describing what will happen; the human must click Confirm to actually perform it.
 
 After any write-intent tool succeeds, clearly restate what was created and that it is PENDING

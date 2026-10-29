@@ -251,7 +251,9 @@ class AgentController:
         self.proposals.expire_stale()
         items = list(self.proposals._proposals.values())  # noqa: SLF001
         if status:
-            items = [p for p in items if p.status.value == status.upper()]
+            # Clients (website + mobile app) ask for "pending"; the enum value is PROPOSED.
+            want = "PROPOSED" if status.upper() == "PENDING" else status.upper()
+            items = [p for p in items if p.status.value == want]
         return sorted(items, key=lambda p: p.created_at, reverse=True)
 
     def approve(self, proposal_id: str, via: str, amount: Decimal | None = None) -> Proposal | None:

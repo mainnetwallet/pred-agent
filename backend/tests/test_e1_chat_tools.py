@@ -22,11 +22,11 @@ from pred_agent.scanner import DiscoveredParent
 
 READ_TOOLS = {
     "list_fixtures", "get_fixture", "get_book", "get_status",
-    "get_positions", "get_orders", "get_rules", "get_limits",
+    "get_positions", "get_orders", "get_rules", "get_limits", "get_proposals",
 }
 WRITE_INTENT_TOOLS = {
     "propose_trade", "create_rule", "close_position",
-    "cancel_order", "cancel_rule", "request_pause", "request_panic",
+    "cancel_order", "cancel_rule", "request_pause", "request_resume", "request_panic",
 }
 FORBIDDEN_TOOLS = {"approve", "execute", "confirm", "place_order", "trade", "cancel_all"}
 

@@ -37,11 +37,13 @@ interface LocalMessage {
 }
 
 const QUICK_CHIPS = [
-  { label: "🟢 Live matches", message: "ekhon live match ki ki ache?" },
-  { label: "🕐 Upcoming", message: "upcoming match gulo dekhao" },
-  { label: "📊 Positions", message: "আমার positions দেখাও" },
-  { label: "📋 Rules", message: "sob rules dekhao" },
+  { label: "🟢 Live", message: "/live" },
+  { label: "🕐 Upcoming", message: "/upcoming" },
+  { label: "📊 Positions", message: "/positions" },
+  { label: "📝 Proposals", message: "/proposals" },
+  { label: "📋 Rules", message: "/rules" },
   { label: "⚙️ Status", message: "/status" },
+  { label: "❓ Commands", message: "/help" },
 ];
 
 // ── Card renderer ─────────────────────────────────────────────
@@ -317,6 +319,9 @@ export default function ChatScreen() {
     if (action === "pause") {
       const r = await api.pause("biometric-confirmed");
       Alert.alert(r.ok ? "Paused" : "Error", r.ok ? "Agent paused." : (r.error?.message ?? "Failed"));
+    } else if (action === "resume") {
+      const r = await api.resume("biometric-confirmed");
+      Alert.alert(r.ok ? "Resumed" : "Error", r.ok ? "Agent resumed." : (r.error?.message ?? "Failed"));
     } else if (action === "panic") {
       Alert.alert("PANIC", "Pause, reject proposals, cancel orders AND all rules?", [
         { text: "Cancel", style: "cancel" },

@@ -1,7 +1,7 @@
 // Position — open positions (with Close), orders (with Cancel) and exit rules in one tab.
 
 import React, { useCallback, useState } from "react";
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity, Alert, RefreshControl } from "react-native";
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity, Alert, RefreshControl, TextInput } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import * as LocalAuthentication from "expo-local-authentication";
 import { useUIStore, usePositionsStore, useOrdersStore } from "../store/index";
@@ -24,6 +24,94 @@ function orderTone(state: string): "long" | "short" | "alert" | "neutral" | "mut
   if (s.includes("DELAY")) return "alert";
   return "neutral";
 }
+
+type RuleKind = "take_profit" | "stop_loss";
+type RuleUnit = "profit_usd" | "profit_pct" | "loss_usd" | "price_cents";
+const RULE_UNITS: Record<RuleKind, { value: RuleUnit; label: string }[]> = {
+  take_profit: [
+    { value: "profit_usd", label: "$ profit" },
+    { value: "profit_pct", label: "% profit" },
+    { value: "price_cents", label: "price ¢" },
+  ],
+  stop_loss: [
+    { value: "loss_usd", label: "$ loss" },
+    { value: "price_cents", label: "price ¢" },
+  ],
+};
+
+// Auto-exit by tap: creates a PENDING take-profit / stop-loss rule (confirm it in the Rules tab).
+const RuleForm: React.FC<{ marketId: string; onCreated: () => void }> = ({ marketId, onCreated }) => {
+  const c = useTheme();
+  const styles = useThemedStyles(makeStyles);
+  const [kind, setKind] = useState<RuleKind>("take_profit");
+  const [unit, setUnit] = useState<RuleUnit>("profit_usd");
+  const [value, setValue] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const pickKind = (k: RuleKind) => {
+    setKind(k);
+    setUnit(RULE_UNITS[k][0].value);
+  };
+
+  const add = async () => {
+    if (!(parseFloat(value) > 0)) {
+      Alert.alert("Value needed", "Enter a trigger value.");
+      return;
+    }
+    setBusy(true);
+    try {
+      const r = await api.createRule({ market_id: marketId, kind, trigger_type: unit, trigger_value: value });
+      if (r.ok) {
+        setValue("");
+        Alert.alert("Rule created", "Confirm it in the Rules tab to activate it.");
+        onCreated();
+      } else {
+        Alert.alert("Could not create rule", r.error?.message ?? "Failed");
+      }
+    } catch {
+      Alert.alert("Error", "Network error");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const chip = (active: boolean) => [styles.ruleChip, active && { backgroundColor: c.primarySoft, borderColor: c.primary }];
+  return (
+    <View style={styles.ruleForm}>
+      <Text style={styles.meta}>Auto-exit</Text>
+      <View style={styles.ruleRow}>
+        <TouchableOpacity style={chip(kind === "take_profit")} onPress={() => pickKind("take_profit")}>
+          <Text style={styles.ruleChipText}>Take-profit</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={chip(kind === "stop_loss")} onPress={() => pickKind("stop_loss")}>
+          <Text style={styles.ruleChipText}>Stop-loss</Text>
+        </TouchableOpacity>
+      </View>
+      <View style={styles.ruleRow}>
+        {RULE_UNITS[kind].map((u) => (
+          <TouchableOpacity key={u.value} style={chip(unit === u.value)} onPress={() => setUnit(u.value)}>
+            <Text style={styles.ruleChipText}>{u.label}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+      <View style={styles.ruleRow}>
+        <TextInput
+          style={styles.ruleInput}
+          value={value}
+          onChangeText={setValue}
+          placeholder="value"
+          keyboardType="decimal-pad"
+          placeholderTextColor={c.placeholder}
+          keyboardAppearance={c.isDark ? "dark" : "light"}
+          accessibilityLabel="Trigger value"
+        />
+        <TouchableOpacity style={[styles.closeBtn, { flex: 1 }, busy && { opacity: 0.5 }]} disabled={busy} onPress={add}>
+          <Text style={styles.closeText}>Add rule</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+};
 
 export const PositionScreen: React.FC = () => {
   const c = useTheme();
@@ -148,6 +236,7 @@ export const PositionScreen: React.FC = () => {
                   <Stat label="Cost" value={formatUsd(p.cost_usd)} />
                 </View>
                 <Text style={styles.meta}>Opened {formatDateTime(p.opened_at)}</Text>
+                <RuleForm marketId={p.market_id} onCreated={() => setTab("rules")} />
                 <TouchableOpacity style={styles.closeBtn} onPress={() => closePosition(p)}>
                   <Text style={styles.closeText}>Close position</Text>
                 </TouchableOpacity>
@@ -220,4 +309,27 @@ const makeStyles = (c: Colors) =>
       backgroundColor: c.surfaceAlt,
     },
     closeText: { color: c.text, fontSize: 14, fontWeight: "700" },
+    ruleForm: { gap: 8, borderTopWidth: 1, borderTopColor: c.border, paddingTop: 10 },
+    ruleRow: { flexDirection: "row", gap: 8, alignItems: "center", flexWrap: "wrap" },
+    ruleChip: {
+      borderWidth: 1,
+      borderColor: c.border,
+      borderRadius: 999,
+      paddingHorizontal: 12,
+      paddingVertical: 7,
+      backgroundColor: c.surfaceAlt,
+    },
+    ruleChipText: { color: c.text, fontSize: 13, fontWeight: "600" },
+    ruleInput: {
+      width: 110,
+      backgroundColor: c.inputBackground,
+      borderWidth: 1,
+      borderColor: c.border,
+      borderRadius: radius.md,
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+      color: c.text,
+      fontFamily: MONO,
+      fontSize: 15,
+    },
   });

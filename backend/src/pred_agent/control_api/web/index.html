@@ -93,6 +93,11 @@ nav#tabbar{display:grid;grid-template-columns:repeat(5,1fr);background:var(--tab
 .btn.block{width:100%;display:flex;align-items:center;justify-content:center;gap:8px}
 input,textarea{font:inherit;width:100%;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:var(--input);color:var(--text)}
 input.mono{font-family:var(--mono)}
+select{font:inherit;padding:10px 8px;border-radius:10px;border:1px solid var(--line);background:var(--input);color:var(--text);min-height:40px}
+.trade{border-top:1px solid var(--line);margin-top:12px;padding-top:12px}.trade:first-child{border-top:0;margin-top:0;padding-top:0}
+.trade .row{margin-top:8px}.trade input{max-width:110px}
+.cmdhint{display:flex;gap:8px;overflow-x:auto;padding:0 0 8px;scrollbar-width:none}
+.cmdhint button{flex:none;background:var(--surface);border:1px solid var(--line);border-radius:999px;padding:6px 12px;font-size:13px;font-weight:600;white-space:nowrap;font-family:var(--mono)}
 .err{color:var(--short);min-height:1.4em;font-size:13px}
 .note{font-size:12px;color:var(--text2)}
 .list{margin:6px 0 0;padding-left:18px;font-size:13px;color:var(--text2)}
@@ -282,7 +287,7 @@ function el(tag, props, ...kids) {
   const e = document.createElement(tag);
   for (const k in props || {}) {
     const v = props[k];
-    if (k === "class") e.className = v; else if (k === "style") e.style.cssText = v; else e[k] = v;
+    if (k === "class") e.className = v; else if (k === "style") e.style.cssText = v; else if (k.startsWith("aria-")) e.setAttribute(k, v); else e[k] = v;
   }
   kids.flat(2).forEach((c) => { if (c != null && c !== false) e.append(c.nodeType ? c : String(c)); });
   return e;
@@ -510,7 +515,12 @@ VIEWS.home = (v) => {
         el("div", { class: "hero-v mono", textContent: st.balance == null ? "—" : usd(st.balance) }),
         st.balance == null && st.feeds_ok ? el("div", { class: "hint", textContent: "Balance unavailable — the server could not fetch it from PRED." }) : null,
         el("div", { class: "div" }),
-        el("div", { class: "stats" }, stat("Exposure", usd(st.exposure)), stat("Daily PnL", pnl.t, pnl.tone), stat("Active rules", String(st.active_rules || 0)))));
+        el("div", { class: "stats" }, stat("Exposure", usd(st.exposure)), stat("Daily PnL", pnl.t, pnl.tone), stat("Active rules", String(st.active_rules || 0))),
+        el("button", { class: "btn block " + (st.paused ? "long" : ""), style: "margin-top:12px", textContent: st.paused ? "▶ Resume agent" : "⏸ Pause agent", onclick: async () => {
+          if (!confirm(st.paused ? "Resume the agent?" : "Pause the agent? No new proposals will be created.")) return;
+          const r = await post(st.paused ? "/v1/resume" : "/v1/pause", {}, true);
+          toast(r.ok ? (st.paused ? "Resumed" : "Paused") : errOf(r), !r.ok); S.reload && S.reload();
+        } })));
     }
     if (p.ok) {
       const pending = (p.data || []).filter((x) => x.status === "PROPOSED");
@@ -539,6 +549,34 @@ VIEWS.live = (v) => {
   });
 };
 
+// ── Trade by click: creates a PENDING proposal, then you approve it right here ──
+function tradePanel(fx) {
+  const mk = (fx.markets || []).filter((m) => m.market_id);
+  if (!mk.length) return null;
+  const slot = el("div", { class: "cards" });
+  const rows = mk.map((m) => {
+    const amt = el("input", { class: "mono", inputMode: "decimal", value: S.tradeAmt || "1", "aria-label": "Amount USD" });
+    const place = async (side) => {
+      const a = parseFloat(amt.value);
+      if (!(a > 0)) { toast("Enter an amount in USD", true); return; }
+      S.tradeAmt = amt.value;
+      const r = await post("/v1/proposals", { market_id: m.market_id, side, amount_usd: String(a) });
+      if (!r.ok) { toast(errOf(r), true); return; }
+      toast("Proposal created — approve it below");
+      slot.prepend(proposalCard(r.data, () => { slot.replaceChildren(); }));
+      refreshStatus();
+    };
+    const ask = m.best_ask_cents != null ? " · " + m.best_ask_cents + "¢" : "", bid = m.best_bid_cents != null ? " · " + m.best_bid_cents + "¢" : "";
+    return el("div", { class: "trade" },
+      el("div", { class: "note truncate", textContent: m.market_id }),
+      el("div", { class: "row" }, el("span", { class: "note", textContent: "Amount $" }), amt),
+      el("div", { class: "row" },
+        el("button", { class: "btn long grow", textContent: "Buy YES" + ask, onclick: () => place("long") }),
+        el("button", { class: "btn short grow", textContent: "Buy NO" + bid, onclick: () => place("short") })));
+  });
+  return [section("Trade"), card(...rows, el("div", { class: "note", style: "margin-top:10px", textContent: "Creates a pending proposal — nothing is placed until you approve it." })), slot];
+}
+
 // ── Fixture detail ──
 VIEWS.fixture = (v, d) => {
   setHead("Match", "");
@@ -564,6 +602,7 @@ VIEWS.fixture = (v, d) => {
       el("div", null,
       (fx.markets || []).length ? [section("Market quotes"), card(...fx.markets.map((m) => el("div", { class: "kv" }, el("span", { class: "truncate", textContent: m.market_id }),
         el("span", { class: "mono", textContent: (m.best_bid_cents != null ? m.best_bid_cents : "—") + " / " + (m.best_ask_cents != null ? m.best_ask_cents : "—") + "¢" }))))] : null,
+      tradePanel(fx),
       fx.research_summary ? [section("Research"), card(el("div", { style: "white-space:pre-wrap", textContent: fx.research_summary }), sources.length ? el("div", { style: "margin-top:10px;font-size:13px" }, sources) : null)] : null));
   });
 };
@@ -637,6 +676,7 @@ VIEWS.position = (v) => {
         el("div", { class: "row" }, sideChip(p.side), chip(p.status), el("span", { class: "grow" }), el("span", { class: "note", textContent: dt(p.opened_at) })),
         el("div", { class: "stats", style: "margin-top:12px" }, stat("Quantity", String(p.quantity)), stat("Avg price", p.avg_price_cents + "¢"), stat("Cost", usd(p.cost_usd))),
         el("div", { class: "note truncate", style: "margin-top:8px", textContent: p.market_id }),
+        ruleForm(p),
         el("button", { class: "btn block", style: "margin-top:10px", textContent: "Close position", onclick: async () => {
           if (!confirm("Create an exit proposal for " + p.side.toUpperCase() + " " + p.quantity + " shares?\n\nYou will still approve it from Home.")) return;
           const res = await post("/v1/positions/" + encodeURIComponent(p.market_id) + "/close", {}, true);
@@ -659,6 +699,22 @@ VIEWS.position = (v) => {
     }
   });
 };
+// ── Exit rule by click (take-profit / stop-loss on an open position) ──
+function ruleForm(p) {
+  const UNITS = { take_profit: [["profit_usd", "$ profit"], ["profit_pct", "% profit"], ["price_cents", "price ¢"]], stop_loss: [["loss_usd", "$ loss"], ["price_cents", "price ¢"]] };
+  const kind = el("select", { "aria-label": "Rule type" }, el("option", { value: "take_profit", textContent: "Take-profit" }), el("option", { value: "stop_loss", textContent: "Stop-loss" }));
+  const unit = el("select", { "aria-label": "Trigger unit" });
+  const val = el("input", { class: "mono", inputMode: "decimal", placeholder: "value", "aria-label": "Trigger value" });
+  const paint = () => unit.replaceChildren(...UNITS[kind.value].map(([v, l]) => el("option", { value: v, textContent: l })));
+  kind.onchange = paint; paint();
+  const add = el("button", { class: "btn", textContent: "Add rule", onclick: async () => {
+    if (!(parseFloat(val.value) > 0)) { toast("Enter a trigger value", true); return; }
+    const r = await post("/v1/rules", { market_id: p.market_id, kind: kind.value, trigger_type: unit.value, trigger_value: val.value });
+    if (!r.ok) { toast(errOf(r), true); return; }
+    toast("Rule created — confirm it in Rules"); S.seg.pos = "rules"; refreshStatus(); render();
+  } });
+  return el("div", { class: "trade" }, el("div", { class: "lbl", textContent: "Auto-exit" }), el("div", { class: "row wrap" }, kind, unit, val, add));
+}
 function ruleCard(rule) {
   const tone = rule.status === "ACTIVE" ? "long" : rule.status === "PENDING" ? "alert" : rule.status === "BLOCKED" || rule.status === "FAILED" ? "short" : "";
   const c = card(
@@ -732,24 +788,35 @@ VIEWS.settings = (v) => {
 };
 
 // ── Chat (built once, kept alive across tab switches) ──
-const SUGGESTIONS = [["🟢 Live matches", "ekhon live match ki ki ache?"], ["🕐 Upcoming", "upcoming match gulo dekhao"], ["📊 Positions", "আমার positions দেখাও"], ["📋 Rules", "sob rules dekhao"], ["⚙️ Status", "/status"]];
+const SUGGESTIONS = [["🟢 Live", "/live"], ["🕐 Upcoming", "/upcoming"], ["📊 Positions", "/positions"], ["📝 Proposals", "/proposals"], ["📋 Rules", "/rules"], ["⚙️ Status", "/status"], ["❓ Commands", "/help"]];
+const CMDS = ["/help", "/status", "/live", "/upcoming", "/match <fixture>", "/positions", "/orders", "/rules", "/proposals", "/limits", "/buy <market> <usd>", "/sell <market> <usd>", "/close <market>", "/approve <id>", "/reject <id>", "/tp <market> <5|20%|70c>", "/sl <market> <3|30c>", "/confirm <rule>", "/cancel <id>", "/pause", "/resume", "/panic", "/limit <name> <value>"];
 const coarsePointer = () => !!(window.matchMedia && matchMedia("(pointer:coarse)").matches);
 function buildChat() {
   const box = el("div", { class: "msgs" });
   const hero = el("div", { class: "hero" },
     el("img", { src: "/icon.svg", width: 56, height: 56, alt: "" }),
     el("h2", { textContent: "What can I help with?" }),
-    el("p", { textContent: "Ask about live matches, positions or exit rules — in বাংলা, Banglish or English." }));
+    el("p", { textContent: "Ask in বাংলা, Banglish or English — or type / for commands. Everything you can click, you can type." }));
   box.append(hero);
-  const input = el("textarea", { placeholder: "Message PRED Agent", rows: 1, enterKeyHint: "send", maxLength: 4000 });
+  const input = el("textarea", { placeholder: "Message PRED Agent, or type / for commands", rows: 1, enterKeyHint: "send", maxLength: 4000 });
   const send = el("button", { class: "sendbtn" });
   const suggest = el("div", { class: "suggest" }, SUGGESTIONS.map(([l, t]) => el("button", { textContent: l, onclick: () => sendChatMessage(t) })));
-  const zone = el("div", { class: "composer-zone" }, el("div", { class: "composer" }, input, send), suggest,
+  const hint = el("div", { class: "cmdhint hidden" });
+  const zone = el("div", { class: "composer-zone" }, hint, el("div", { class: "composer" }, input, send), suggest,
     el("div", { class: "disclaimer", textContent: "PRED Agent can make mistakes. Verify before approving." }));
   const wrap = el("div", { class: "chatwrap is-empty" }, box, zone);
-  chat = { wrap, box, hero, input, send, busy: false, abort: null };
+  chat = { wrap, box, hero, input, send, hint, busy: false, abort: null };
   send.onclick = () => { if (chat.busy) { if (chat.abort) chat.abort.abort(); } else sendChatMessage(input.value); };
-  input.addEventListener("input", () => { autosize(); chatUi(); });
+  input.addEventListener("input", () => {
+    autosize(); chatUi();
+    const v = input.value;
+    const m = v.startsWith("/") && !v.includes("\n") ? CMDS.filter((c) => c.startsWith(v.split(" ")[0]) && v.split(" ").length < 2) : [];
+    hint.classList.toggle("hidden", !m.length);
+    hint.replaceChildren(...m.slice(0, 12).map((c) => el("button", { textContent: c, onclick: () => {
+      const base = c.split(" ")[0];
+      if (c.includes("<")) { input.value = base + " "; input.focus(); input.dispatchEvent(new Event("input")); } else { hint.classList.add("hidden"); sendChatMessage(base); }
+    } })));
+  });
   // Enter sends on desktop; on touch keyboards Enter makes a new line (use the send button).
   input.addEventListener("keydown", (e) => {
     if (e.key === "Enter" && !e.shiftKey && !e.isComposing && !coarsePointer()) { e.preventDefault(); if (!chat.busy) sendChatMessage(input.value); }
@@ -772,7 +839,7 @@ async function newChat() {
   if (!chat) return;
   if (chat.busy && chat.abort) chat.abort.abort();
   if (chatSessionId) { const sid = chatSessionId; chatSessionId = null; await api("/v1/chat/" + encodeURIComponent(sid), { method: "DELETE" }); }
-  chat.box.replaceChildren(chat.hero); chat.input.value = ""; autosize(); chatUi(); chat.input.focus();
+  chat.box.replaceChildren(chat.hero); chat.input.value = ""; chat.hint.classList.add("hidden"); autosize(); chatUi(); chat.input.focus();
 }
 VIEWS.chat = (v) => {
   setHead("Chat", "");
@@ -899,6 +966,7 @@ function renderCard(card) {
       if (!confirm(d.label || "Confirm this action?")) return;
       let r;
       if (d.action === "pause") r = await post("/v1/pause", {}, true);
+      else if (d.action === "resume") r = await post("/v1/resume", {}, true);
       else if (d.action === "panic") r = await post("/v1/panic", {}, true);
       else if (d.action === "cancel_order") r = await post("/v1/orders/" + encodeURIComponent(d.order_id) + "/cancel", {}, true);
       else if (d.action === "cancel_rule") r = await post("/v1/rules/" + encodeURIComponent(d.rule_id) + "/cancel", {}, true);

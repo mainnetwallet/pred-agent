@@ -1,7 +1,7 @@
 // Fixture detail — score header, p_fair per outcome, market quotes, research.
 
 import React, { useCallback, useEffect, useState } from "react";
-import { View, Text, ScrollView, StyleSheet, Linking, TouchableOpacity, ActivityIndicator } from "react-native";
+import { View, Text, ScrollView, StyleSheet, Linking, TouchableOpacity, ActivityIndicator, TextInput, Alert } from "react-native";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import { useUIStore } from "../store/index";
 import { Colors, MONO, radius, useTheme, useThemedStyles } from "../utils/theme";
@@ -10,6 +10,82 @@ import { formatDateTime, formatUsd } from "../utils/format";
 import { FixtureDetail } from "../types/api";
 import { ProbabilityGauge } from "../components/ProbabilityGauge";
 import { Card, EmptyState, ScreenHeader, SectionTitle, StateChip } from "../components/ui";
+
+// One market: amount + Buy YES / Buy NO. Creates a PENDING proposal; you approve it on the Proposals screen.
+const TradeRow: React.FC<{ marketId: string; bid?: number | null; ask?: number | null; first: boolean }> = ({
+  marketId,
+  bid,
+  ask,
+  first,
+}) => {
+  const c = useTheme();
+  const styles = useThemedStyles(makeStyles);
+  const navigation = useNavigation<any>();
+  const [amount, setAmount] = useState("1");
+  const [busy, setBusy] = useState(false);
+
+  const place = async (side: "long" | "short") => {
+    const a = parseFloat(amount);
+    if (!(a > 0)) {
+      Alert.alert("Amount needed", "Enter an amount in USD.");
+      return;
+    }
+    setBusy(true);
+    try {
+      const r = await api.createProposal({ market_id: marketId, side, amount_usd: String(a) });
+      if (r.ok) {
+        Alert.alert("Proposal created", "Nothing is placed until you approve it.", [
+          { text: "Later", style: "cancel" },
+          { text: "Review now", onPress: () => navigation.navigate("Proposals") },
+        ]);
+      } else {
+        Alert.alert("Could not create proposal", r.error?.message ?? "Failed");
+      }
+    } catch {
+      Alert.alert("Error", "Network error");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <View style={[styles.tradeRow, !first && styles.quoteRowBorder]}>
+      <Text style={styles.quoteId} numberOfLines={1}>
+        {marketId}
+      </Text>
+      <View style={styles.tradeInputRow}>
+        <Text style={styles.muted}>Amount $</Text>
+        <TextInput
+          style={styles.tradeInput}
+          value={amount}
+          onChangeText={setAmount}
+          keyboardType="decimal-pad"
+          placeholderTextColor={c.placeholder}
+          keyboardAppearance={c.isDark ? "dark" : "light"}
+          accessibilityLabel="Amount in USD"
+        />
+      </View>
+      <View style={styles.tradeBtns}>
+        <TouchableOpacity
+          style={[styles.tradeBtn, { backgroundColor: c.long }, busy && { opacity: 0.5 }]}
+          disabled={busy}
+          onPress={() => place("long")}
+          accessibilityRole="button"
+        >
+          <Text style={styles.tradeBtnText}>Buy YES{ask ? ` · ${ask}¢` : ""}</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.tradeBtn, { backgroundColor: c.short }, busy && { opacity: 0.5 }]}
+          disabled={busy}
+          onPress={() => place("short")}
+          accessibilityRole="button"
+        >
+          <Text style={styles.tradeBtnText}>Buy NO{bid ? ` · ${bid}¢` : ""}</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+};
 
 export const FixtureDetailScreen: React.FC = () => {
   const c = useTheme();
@@ -126,6 +202,18 @@ export const FixtureDetailScreen: React.FC = () => {
             </>
           )}
 
+          {fx.markets.length > 0 && (
+            <>
+              <SectionTitle title="Trade" />
+              <Card style={{ paddingVertical: 4 }}>
+                {fx.markets.map((m, i) => (
+                  <TradeRow key={m.market_id} marketId={m.market_id} bid={m.best_bid_cents} ask={m.best_ask_cents} first={i === 0} />
+                ))}
+                <Text style={styles.muted}>Creates a pending proposal — nothing is placed until you approve it.</Text>
+              </Card>
+            </>
+          )}
+
           {fx.research_summary ? (
             <>
               <SectionTitle title="Research" />
@@ -164,6 +252,24 @@ const makeStyles = (c: Colors) =>
     quoteRowBorder: { borderTopWidth: 1, borderTopColor: c.border },
     quoteId: { color: c.textSecondary, fontSize: 12, flex: 1, fontFamily: MONO },
     quoteVal: { color: c.text, fontFamily: MONO, fontSize: 14, fontWeight: "700" },
+    tradeRow: { paddingVertical: 12, gap: 10 },
+    tradeInputRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+    tradeInput: {
+      flex: 1,
+      maxWidth: 140,
+      backgroundColor: c.inputBackground,
+      borderWidth: 1,
+      borderColor: c.border,
+      borderRadius: radius.md,
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+      color: c.text,
+      fontFamily: MONO,
+      fontSize: 15,
+    },
+    tradeBtns: { flexDirection: "row", gap: 10 },
+    tradeBtn: { flex: 1, minHeight: 44, borderRadius: radius.md, alignItems: "center", justifyContent: "center" },
+    tradeBtnText: { color: "#fff", fontSize: 14, fontWeight: "700" },
     body: { color: c.text, fontSize: 14, lineHeight: 21 },
     link: { color: c.primary, fontSize: 12, marginTop: 8, borderRadius: radius.sm },
   });
