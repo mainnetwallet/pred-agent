@@ -8,12 +8,15 @@ in Phase 4. No Ably realtime in CLOB mode — polling is used instead.
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 import httpx
 
 from ..auth.clob_auth import ClobAuth
 from .protocol import PredTransport, PredTransportError, TransportCaps
+
+log = logging.getLogger(__name__)
 
 
 class ClobTransport(PredTransport):
@@ -32,13 +35,33 @@ class ClobTransport(PredTransport):
             has_parent_open_orders=False,
             has_earnings=False,
         )
+        # True once any L2 request got past PRED's L2 check (any reply except 401 invalid_l2):
+        # from then on the signature encoding is known to be accepted and is never changed again.
+        self._l2_verified = False
 
     # ------------------------------------------------------------------ #
     # PredTransport protocol
     # ------------------------------------------------------------------ #
 
     def get(self, path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
-        status, body, _ = self._request("GET", path, params=params)
+        """Authenticated GET. Read-only, so it is the one place an L2 encoding retry is safe."""
+        try:
+            _, body, _ = self._request("GET", path, params=params)
+            return body
+        except PredTransportError as exc:
+            if self._l2_verified or exc.status != 401 or "invalid_l2" not in (exc.raw_body or ""):
+                raise
+        # PRED's docs do not say whether the base64url HMAC output keeps '=' padding. The first
+        # L2 call was refused with invalid_l2, so retry this read ONCE with the other encoding
+        # (and a fresh timestamp/HMAC, as the docs require). Orders and cancels never retry here.
+        original = self.auth.pad_signature
+        self.auth.pad_signature = not original
+        try:
+            _, body, _ = self._request("GET", path, params=params)
+        except PredTransportError:
+            self.auth.pad_signature = original
+            raise
+        log.warning("PRED accepted L2 signatures with pad_signature=%s", self.auth.pad_signature)
         return body
 
     def post(self, path: str, json: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -53,9 +76,9 @@ class ClobTransport(PredTransport):
         return self._raw_request("GET", path, params=params)
 
     def health_check(self) -> bool:
+        """Reachability: /clob/time is unauthenticated, so this works before credentials exist."""
         try:
             self.auth.sync_clock()
-            self._raw_request("GET", "/clob/time")
             return True
         except Exception:
             return False
@@ -65,16 +88,16 @@ class ClobTransport(PredTransport):
     # ------------------------------------------------------------------ #
 
     def clob_time(self) -> int:
-        _, body, _ = self._raw_request("GET", "/clob/time")
-        import json as _json
-        return int(_json.loads(body))
+        """GET /clob/time (unauthenticated; no L2 headers, so it works without credentials)."""
+        return self.auth.server_time()
 
     def account_status(self) -> dict[str, Any]:
-        """GET /clob/api/v1/user/account-status — top-level fields, no data wrapper."""
-        _, body, _ = self._raw_request("GET", "/clob/api/v1/user/account-status")
-        import json as _json
-        status: dict[str, Any] = _json.loads(body)
-        return status
+        """GET /clob/api/v1/user/account-status — top-level fields, no data wrapper.
+
+        Raises ``PredTransportError`` on any HTTP error: an error body (e.g. 401 invalid_l2) must
+        never be mistaken for an account that simply has no Safe yet.
+        """
+        return self.get("/clob/api/v1/user/account-status")
 
     def activate_user(self, activate_user: bool = True,
                       referral_code: str | None = None) -> dict[str, Any]:
@@ -141,4 +164,6 @@ class ClobTransport(PredTransport):
             method, f"{self._base_url}{path}", params=params, content=raw_body or None,
             headers={**headers, "Content-Type": "application/json"},
         )
+        if resp.status_code != 401:
+            self._l2_verified = True
         return resp.status_code, resp.text, dict(resp.headers)

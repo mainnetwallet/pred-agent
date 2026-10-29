@@ -128,8 +128,13 @@ def _clob_auth(handler):
     )
 
 
-def test_ensure_credentials_only_recovers_existing_credentials():
+def test_ensure_credentials_recovers_without_a_create_call_when_derive_succeeds():
+    """When PRED already has credentials for this EOA, ensure_credentials() must not fall
+    through to create-api-key at all (see test_clob_eligibility.py for the fallback cases)."""
+
     def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/clob/time":
+            return httpx.Response(200, json=1_800_000_000)
         assert request.url.path.endswith("derive-api-key")
         return httpx.Response(200, json={"apiKey": "k", "secret": "c2VjcmV0", "passphrase": "p"})
 
@@ -143,13 +148,16 @@ def test_create_nonce_already_used_recovers_by_deriving_same_nonce():
 
     def handler(request: httpx.Request) -> httpx.Response:
         seen.append(request.url.path)
+        if request.url.path == "/clob/time":
+            return httpx.Response(200, json=1_800_000_000)
         if request.url.path.endswith("/auth/api-key"):
             return httpx.Response(400, json={"error": "nonce_already_used"})
         return httpx.Response(200, json={"apiKey": "k", "secret": "c2VjcmV0", "passphrase": "p"})
 
     creds = _clob_auth(handler).create_credentials(0)
     assert creds.api_key == "k"
-    assert seen == ["/clob/auth/api-key", "/clob/auth/derive-api-key"]
+    paths = [p for p in seen if p != "/clob/time"]
+    assert paths == ["/clob/auth/api-key", "/clob/auth/derive-api-key"]
 
 
 def test_ensure_credentials_does_not_mask_server_errors():

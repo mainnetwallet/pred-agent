@@ -22,6 +22,7 @@ from decimal import ROUND_DOWN, Decimal
 from enum import Enum
 from typing import TYPE_CHECKING, Any
 
+from pred_agent.auth.mode import resolve_auth_mode
 from pred_agent.config import Settings
 from pred_agent.execution.live_executor import LiveOrderIntent
 from pred_agent.execution.live_runtime import LiveRuntime, MarketContext, MarketLookup
@@ -135,7 +136,7 @@ class AgentController:
         return {
             **live_info,
             "mode": self.mode,
-            "auth_mode": "clob",
+            "auth_mode": resolve_auth_mode(self.settings),
             "feeds_ok": self.feeds_ok,
             "feed_diag": dict(self._feed_diag) if self._feed_diag is not None else None,
             "balance": self._balance_usd,   # null = not available

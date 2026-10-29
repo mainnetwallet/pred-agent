@@ -21,6 +21,7 @@ from typing import Any, Protocol
 
 from ..auth.clob_auth import ClobAuth
 from ..auth.jwt_auth import JwtAuth
+from ..auth.mode import JWT, resolve_auth_mode, warn_if_api_key_ignored
 from ..config import Settings, load_settings
 from ..signer.eip712 import (
     is_low_s,
@@ -72,9 +73,17 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 def _load_transport() -> tuple[Settings, _ApprovalTransport]:
+    """Build the transport for the configured auth mode (PRED_AUTH_MODE, default clob).
+
+    PRED_API_KEY alone never selects JWT. In CLOB mode the L2 credentials are derived/issued here
+    for the EXISTING account (never a new one, never with a partner key) — without them no CLOB
+    call (including safe-approval) can be signed.
+    """
     settings = load_settings()
     transport: _ApprovalTransport
-    if settings.pred_api_key:
+    if resolve_auth_mode(settings) == JWT:
+        if not settings.pred_api_key:
+            raise EnablementError("PRED_AUTH_MODE=jwt needs PRED_API_KEY")
         jwt_auth = JwtAuth(
             api_key=settings.pred_api_key,
             private_key=settings.private_key or "",
@@ -85,12 +94,17 @@ def _load_transport() -> tuple[Settings, _ApprovalTransport]:
         )
         transport = JwtTransport(jwt_auth)
     else:
+        if not settings.private_key:
+            raise EnablementError("PRIVATE_KEY not configured")
+        warn_if_api_key_ignored(settings)
         clob_auth = ClobAuth(
-            eoa_address=private_to_address(settings.private_key) if settings.private_key else "0x",
-            private_key=settings.private_key or "",
+            eoa_address=private_to_address(settings.private_key),
+            private_key=settings.private_key,
             chain_id=settings.chain_id,
+            base_url=settings.host,
         )
-        transport = ClobTransport(clob_auth)
+        clob_auth.ensure_credentials(0)
+        transport = ClobTransport(clob_auth, base_url=settings.host)
     return settings, transport
 
 
@@ -117,7 +131,14 @@ def _fail(msg: str) -> int:
 
 def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911
     args = _parse_args(argv)
-    settings, transport = _load_transport()
+    try:
+        settings, transport = _load_transport()
+    except EnablementError as exc:
+        return _fail(str(exc))
+    except Exception as exc:  # noqa: BLE001 - CLOB/JWT auth failures carry PRED's reason
+        from ..execution.live_runtime import describe_auth_error
+
+        return _fail(f"could not authenticate with PRED: {describe_auth_error(exc)}")
     state_path = Path(args.state_file)
     state = _load_state(state_path)
 

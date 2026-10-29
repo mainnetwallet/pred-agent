@@ -8,7 +8,7 @@ orders are impossible unless the operator manually sets it true on the server.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import yaml
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -42,8 +42,14 @@ class Settings(BaseSettings):
     usdc_address: str = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
     create_proxy_factory: str = "0xA077e7aaBF2e3c0155F83789e95f46602D03F7f0"
 
+    # Auth mode for PRED. "clob" (default): L1/L2 credentials derived/issued from PRIVATE_KEY for
+    # your EXISTING account, no API key needed; live orders only work in this mode. "jwt":
+    # ordinary login with PRED_API_KEY, used only by the one-time enablement CLI.
+    pred_auth_mode: Literal["clob", "jwt"] = "clob"
+
     # Secrets (from .env)
-    # Ordinary-login `X-API-Key` (JWT mode). CLOB mode uses credentials issued by PRED.
+    # Ordinary-login `X-API-Key` (JWT mode only). CLOB mode uses credentials issued by PRED and
+    # does not use this key; setting it never switches the mode (see PRED_AUTH_MODE above).
     pred_api_key: str | None = None
     private_key: str | None = None
     llm_api_key: str | None = None
@@ -128,6 +134,14 @@ class Settings(BaseSettings):
     def _strip_admin_password(cls, v: Any) -> Any:
         if isinstance(v, str):
             return v.strip() or None
+        return v
+
+    @field_validator("pred_auth_mode", mode="before")
+    @classmethod
+    def _normalise_auth_mode(cls, v: Any) -> Any:
+        # Blank Render env var or stray case/whitespace must not break startup: default to clob.
+        if isinstance(v, str):
+            return v.strip().lower() or "clob"
         return v
 
     @field_validator("private_key")

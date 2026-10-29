@@ -39,7 +39,9 @@ services:
         sync: false
       - key: PRIVATE_KEY
         sync: false
-      - key: PRED_API_KEY
+      - key: PRED_AUTH_MODE  # clob (default, needed for live orders) or jwt (enablement CLI only)
+        value: clob
+      - key: PRED_API_KEY    # OPTIONAL, jwt mode only. CLOB (live orders) does not use it.
         sync: false
       - key: LLM_API_KEY
         sync: false

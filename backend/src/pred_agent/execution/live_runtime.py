@@ -19,6 +19,7 @@ import httpx
 from pred_agent.book import BookSnapshot, normalize_book
 from pred_agent.execution.live_executor import LiveExecutor
 from pred_agent.execution.state_machine import OrderRecord, OrderState, OrderStateMachine
+from pred_agent.transport.protocol import PredTransportError
 
 log = logging.getLogger(__name__)
 
@@ -148,17 +149,29 @@ _AUTH_HINTS = {
 def describe_auth_error(exc: BaseException) -> str:
     """Human-readable cause for a CLOB auth failure: HTTP status + PRED error code + hint.
 
-    ``httpx.HTTPStatusError`` alone hides everything useful, so read the response body.
+    ``httpx.HTTPStatusError`` / ``PredTransportError`` alone hide everything useful, so read the
+    response body. A ``ClobAccessBlocked`` already carries the full derive+create explanation.
     """
     import json as _json
 
+    from pred_agent.auth.clob_auth import ClobAccessBlocked
+
+    if isinstance(exc, ClobAccessBlocked):
+        return exc.explain()
     response = getattr(exc, "response", None)
-    if response is None:
+    status: Any
+    text: str
+    if response is not None:
+        status = getattr(response, "status_code", "?")
+        text = getattr(response, "text", "") or ""
+    elif isinstance(exc, PredTransportError):
+        status = exc.status
+        text = exc.raw_body or ""
+    else:
         return f"{type(exc).__name__}: {exc}"[:200]
-    status = getattr(response, "status_code", "?")
     code = ""
     try:
-        data = _json.loads(response.text)
+        data = _json.loads(text)
         if isinstance(data, dict):
             err = data.get("error") or data.get("code") or data.get("message") or ""
             if isinstance(err, dict):
@@ -189,23 +202,25 @@ def setup_live(
     max_discovery_age_s: float,
 ) -> LiveRuntime:
     """Arm live trading or raise ``LiveSetupError`` explaining what is missing."""
+    from pred_agent.auth.mode import CLOB, resolve_auth_mode
     from pred_agent.signer.eip712 import private_to_address
 
     if not getattr(settings, "live_trading", False):
         raise LiveSetupError("LIVE_TRADING is not true")
+    if resolve_auth_mode(settings) != CLOB:
+        raise LiveSetupError("live trading needs PRED_AUTH_MODE=clob (JWT is not used for live orders)")
     private_key = getattr(settings, "private_key", None)
     if not private_key:
         raise LiveSetupError("PRIVATE_KEY is not set")
     auth = getattr(transport, "auth", None)
     if auth is None or not hasattr(transport, "account_status"):
-        raise LiveSetupError("live trading needs the CLOB transport (no PRED_API_KEY/JWT path wired)")
+        raise LiveSetupError("live trading needs the CLOB transport (PRIVATE_KEY configured)")
 
     eoa = private_to_address(private_key)
     try:
         auth.sync_clock()
         if auth.credentials is None:
-            # Startup only recovers already-issued credentials; creation is explicit and
-            # cannot silently turn an ineligible EOA into a new account.
+            # Existing account: derive, else issue L2 creds for it (never a new account/quota).
             (getattr(auth, "ensure_credentials", None) or auth.derive_credentials)(0)
         status = transport.account_status()
     except Exception as exc:  # noqa: BLE001

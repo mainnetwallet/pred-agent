@@ -19,7 +19,9 @@ Ekta Render web service e **website + mobile app API + Telegram bot** tinta-i ch
 | `LLM_API_KEY` | LLM provider er API key |
 | `LLM_MODEL` | model name (jemon `gpt-4o-mini`, `deepseek-chat`) — **tool-calling support dorkar** |
 | `LLM_BASE_URL` | provider er API root, jemon `https://api.openai.com/v1` ba `https://openrouter.ai/api/v1` |
-| `PRIVATE_KEY`, `PRED_API_KEY`, `BASE_RPC_URL` | agent er jonno (optional ekhon) |
+| `PRIVATE_KEY`, `BASE_RPC_URL` | agent er jonno. `PRIVATE_KEY` LIVE er jonno lagbe (PAPER e na); `BASE_RPC_URL` optional (on-chain approval check) |
+| `PRED_AUTH_MODE` | optional, default `clob`. LIVE order shudhu `clob` mode e hoy. `jwt` shudhu enablement CLI er jonno |
+| `PRED_API_KEY` | **optional**, shudhu `PRED_AUTH_MODE=jwt` hole lagbe. CLOB e lagbe na; set thakleo mode bodlay na |
 
 > **Note:** `DATABASE_URL` is injected automatically by the Blueprint via `fromDatabase`. Do NOT set it manually.
 
@@ -122,17 +124,24 @@ Render → Environment → `ADMIN_PASSWORD` update → redeploy. Purono sob logi
 ## Ekhono baki (manual steps)
 
 1. `LLM_MODEL` set koro — tool-calling support ache emon model choose koro.
-2. `PRED_API_KEY` set koro JWT mode er jonno (optional; CLOB mode uses L1/L2 credentials and does not use this key).
+2. `PRED_API_KEY` dorkar nei (CLOB mode e use hoy na). Shudhu `PRED_AUTH_MODE=jwt` e enablement CLI chalate hole lagbe.
 3. `PRIVATE_KEY` set koro LIVE er jonno (PAPER mode e dorkar nei).
 4. Alembic migration confirm koro: `alembic upgrade head` startup e automatically cholbe.
 5. PAPER → LIVE checklist complete koro (README.md section 8 dekho).
 6. `docker-compose.yml`/Tailscale option private VPS deploy er jonno ache.
 
-### CLOB credential issuance (operator-only)
+### CLOB credential issuance
 
-`ensure_credentials()` and service startup only recover already-issued credentials. They do
-not silently issue credentials or create accounts. For an existing eligible primary EOA,
-run `backend/scripts/issue_clob_credentials.py` manually with
-`--confirm-existing-account`; the command prints a warning and sends no partner key.
-PRED may still return `401 invalid_auth` or `aggregator_key_required` if the account is not
-eligible. Do not retry by enabling partner-key or account/Safe setup paths.
+`ensure_credentials()` first recovers already-issued credentials (`derive-api-key`); only if
+PRED has never issued any for this EOA does it issue them (`api-key`, no partner key, no
+account created, no quota consumed — docs: existing eligible users can do this without a
+partner key). This runs automatically on live-trading startup and in the enablement CLI, so no
+manual step is required for an eligible account the first time it uses CLOB.
+
+If PRED refuses BOTH calls, the EOA is not an eligible existing account's primary wallet —
+PRED's decision, not something this agent can work around. Run
+`PYTHONPATH=src PRIVATE_KEY=0x... python backend/scripts/diagnose_clob_auth.py` (never places
+an order) and send the redacted report to PRED support, asking them to enable CLOB access for
+this EOA or to confirm the account's primary wallet. `backend/scripts/issue_clob_credentials.py`
+remains available if you'd rather issue credentials by hand, with an explicit
+`--confirm-existing-account`, before running anything else — it is optional, not required.
