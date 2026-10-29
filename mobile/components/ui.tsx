@@ -8,6 +8,7 @@ import { useNavigation } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Colors, MONO, radius, useTheme, useThemedStyles } from "../utils/theme";
 import { formatUsd } from "../utils/format";
+import { Logo } from "./Logo";
 
 // ── Icons ────────────────────────────────────────────────────
 
@@ -141,6 +142,8 @@ interface ScreenHeaderProps {
   onBack?: () => void;
   right?: React.ReactNode;
   hidePanic?: boolean;
+  /** Show the PRED Agent brand mark before the title (Home). */
+  logo?: boolean;
 }
 
 export const ScreenHeader: React.FC<ScreenHeaderProps> = ({
@@ -151,6 +154,7 @@ export const ScreenHeader: React.FC<ScreenHeaderProps> = ({
   onBack,
   right,
   hidePanic,
+  logo,
 }) => {
   const c = useTheme();
   const styles = useThemedStyles(makeStyles);
@@ -164,6 +168,7 @@ export const ScreenHeader: React.FC<ScreenHeaderProps> = ({
             <Icon name="back" color={c.text} />
           </TouchableOpacity>
         )}
+        {logo && <Logo size={34} />}
         <View style={styles.headerTitleWrap}>
           <Text style={styles.headerTitle} numberOfLines={1}>
             {title}

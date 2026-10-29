@@ -25,6 +25,26 @@ Dark default, light option (system-follows). One accent per side:
 Color is never used alone: every LONG/SHORT indicator carries a label and icon (▲/▼ or
 LONG/SHORT text).
 
+## Logo
+
+The mark is a geometric **P** — a vertical stem plus a ring — with a green dot in the counter.
+The dot is the "fair probability" marker from the probability gauge, so the logo and the app's
+signature component say the same thing. It sits on a near-black navy rounded tile.
+
+| Part | Colour |
+|------|--------|
+| Tile | `#0B0F14` (hairline edge `#2A3644`) |
+| Stem + ring | `#60A5FA` |
+| Dot | `#22C55E` |
+
+- Source of truth: `assets/branding/build_assets.py`. Run it to regenerate **every** icon
+  (website/PWA, iOS/Android app icon, splash, notification, favicon) — never edit the PNGs by hand.
+- In the app use `components/Logo.tsx` (`<Logo size={64} />`, `badge={false}` for a bare mark).
+- Keep clear space of at least ¼ of the mark's height around it; don't recolour, stretch or add effects.
+- The tile is always dark, in light and dark mode alike.
+- Android adaptive icon keeps the mark inside the central 61% safe circle; the notification icon is
+  a flat white silhouette (Android only reads its alpha channel).
+
 ## Typography
 
 - Headings: `Inter` (clean sans) — display use at 24–32px, tight tracking.

@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import {
+  View,
   Text,
   TextInput,
   TouchableOpacity,
@@ -15,6 +16,7 @@ import { Colors, useTheme, useThemedStyles } from "../utils/theme";
 import { api } from "../services/api";
 import { wsClient } from "../services/websocket";
 import { DEFAULT_SERVER_URL, DEFAULT_USERNAME } from "../utils/defaults";
+import { Logo } from "../components/Logo";
 
 export const LoginScreen: React.FC = () => {
   const c = useTheme();
@@ -65,6 +67,9 @@ export const LoginScreen: React.FC = () => {
       style={styles.container}
       behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
+      <View style={styles.logo}>
+        <Logo size={80} />
+      </View>
       <Text style={styles.title}>PRED Agent</Text>
       <Text style={styles.subtitle}>Sign in to control your agent</Text>
       <TextInput
@@ -112,6 +117,7 @@ export const LoginScreen: React.FC = () => {
 
 const makeStyles = (c: Colors) => StyleSheet.create({
   container: { flex: 1, justifyContent: "center", padding: 24, backgroundColor: c.background },
+  logo: { marginBottom: 20 },
   title: { color: c.text, fontSize: 34, fontWeight: "800", letterSpacing: -1, marginBottom: 4 },
   subtitle: { fontSize: 15, color: c.textSecondary, marginBottom: 28 },
   input: {

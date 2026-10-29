@@ -11,8 +11,9 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="PRED Agent">
 <link rel="manifest" href="/manifest.webmanifest">
-<link rel="icon" href="/icon.svg" type="image/svg+xml">
-<link rel="apple-touch-icon" href="/icon.svg">
+<link rel="icon" href="/favicon.ico" sizes="48x48">
+<link rel="icon" href="/icon.svg" type="image/svg+xml" sizes="any">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700;800&display=swap">
 <style>
@@ -44,6 +45,7 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
 @media(min-width:660px){#app{border-inline:1px solid var(--line)}}
 header.top{display:flex;align-items:center;gap:8px;padding:calc(env(safe-area-inset-top,0px) + 10px) 16px 10px}
 header.top .titles{flex:1;min-width:0}
+header.top .hdr-logo{flex:none;border-radius:8px}
 header.top h1{margin:0;font-size:22px;line-height:1.15;font-weight:800;letter-spacing:-.02em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 header.top .sub{color:var(--text2);font-size:12px;min-height:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .iconbtn{background:none;border:0;padding:6px;margin-left:-8px;color:var(--text);display:flex;border-radius:10px}
@@ -172,6 +174,7 @@ select{font:inherit;padding:10px 8px;border-radius:10px;border:1px solid var(--l
 
 /* login */
 #login{max-width:380px;margin:0 auto;padding:calc(env(safe-area-inset-top,0px) + 14vh) 20px 20px}
+#login .logo{display:block;width:72px;height:72px;margin:0 0 20px;border-radius:18px}
 #login h1{font-size:30px;letter-spacing:-.03em;margin:0 0 4px}
 #login input{margin-bottom:10px}
 
@@ -205,6 +208,7 @@ select{font:inherit;padding:10px 8px;border-radius:10px;border:1px solid var(--l
   #app{max-width:none;display:grid;grid-template-columns:248px minmax(0,1fr);grid-template-rows:auto auto minmax(0,1fr);
     grid-template-areas:"side top" "side stale" "side main";border:0}
   header.top{grid-area:top;padding:22px 32px 16px;border-bottom:1px solid var(--line);margin-bottom:22px}
+  header.top .hdr-logo{display:none}
   header.top h1{font-size:26px}
   .stale{grid-area:stale;margin:0 32px 16px}
   main#view{grid-area:main;padding:0 max(32px,calc((100% - 1180px)/2)) 40px}
@@ -238,6 +242,7 @@ select{font:inherit;padding:10px 8px;border-radius:10px;border:1px solid var(--l
 </head>
 <body>
 <section id="login" class="hidden">
+  <img class="logo" src="/icon.svg" width="72" height="72" alt="PRED Agent logo">
   <h1>PRED Agent</h1>
   <p class="muted">Sign in to control the agent.</p>
   <input id="u" placeholder="Username" autocomplete="username" autocapitalize="none">
@@ -249,6 +254,7 @@ select{font:inherit;padding:10px 8px;border-radius:10px;border:1px solid var(--l
 <div id="app" class="hidden">
   <header class="top">
     <button id="backBtn" class="iconbtn hidden" aria-label="Back"></button>
+    <img id="hdrLogo" class="hdr-logo hidden" src="/icon.svg" width="30" height="30" alt="">
     <div class="titles"><h1 id="title">PRED Agent</h1><div id="sub" class="sub"></div></div>
     <button id="newChat" class="newchat hidden" title="New chat"><span id="newChatIc" style="display:flex"></span><span class="nclabel">New chat</span></button>
     <span id="modePill" class="pill hidden"></span>
@@ -453,7 +459,10 @@ function go(tab) { S.tab = tab; S.detail = null; render(); }
 function openDetail(kind, id) { S.detail = { kind, id }; history.pushState({ d: 1 }, ""); render(); }
 $("backBtn").onclick = () => history.back();
 window.addEventListener("popstate", () => { if (S.detail) { S.detail = null; render(); } });
-function setHead(title, sub) { $("title").textContent = title; $("sub").textContent = sub || ""; }
+function setHead(title, sub) {
+  $("title").textContent = title; $("sub").textContent = sub || "";
+  $("hdrLogo").classList.toggle("hidden", title !== "PRED Agent"); // brand mark on Home only
+}
 function render() {
   S.reload = null;
   const d = S.detail, v = $("view");

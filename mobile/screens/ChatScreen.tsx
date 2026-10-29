@@ -27,6 +27,7 @@ import { useUIStore } from "../store/index";
 import { Colors, radius, useTheme, useThemedStyles } from "../utils/theme";
 import { Icon, ScreenHeader } from "../components/ui";
 import { Markdown } from "../components/Markdown";
+import { Logo } from "../components/Logo";
 
 // ── Types ─────────────────────────────────────────────────────
 interface LocalMessage {
@@ -172,12 +173,11 @@ function Thinking({ label }: { label: string }) {
 
 // ── Empty state: greeting + suggestion pills ──────────────────
 function EmptyState({ onPick }: { onPick: (message: string) => void }) {
-  const c = useTheme();
   const styles = useThemedStyles(makeStyles);
   return (
     <View style={styles.empty}>
       <View style={styles.emptyLogo}>
-        <Icon name="chat" size={28} color={c.primary} />
+        <Logo size={64} />
       </View>
       <Text style={styles.emptyTitle}>What can I help with?</Text>
       <Text style={styles.emptySub}>Live match, positions, rules — বাংলা, Banglish বা English-এ জিজ্ঞেস করুন।</Text>
@@ -461,7 +461,7 @@ const makeStyles = (c: Colors) => StyleSheet.create({
 
   // empty state
   empty: { alignItems: "center", paddingHorizontal: 8, gap: 8 },
-  emptyLogo: { width: 60, height: 60, borderRadius: 30, backgroundColor: c.primarySoft, alignItems: "center", justifyContent: "center", marginBottom: 6 },
+  emptyLogo: { marginBottom: 6 },
   emptyTitle: { color: c.text, fontSize: 26, fontWeight: "700", letterSpacing: -0.4, textAlign: "center" },
   emptySub: { color: c.textSecondary, fontSize: 14, lineHeight: 20, textAlign: "center", maxWidth: 320 },
   suggestList: { flexDirection: "row", flexWrap: "wrap", justifyContent: "center", gap: 8, marginTop: 16 },

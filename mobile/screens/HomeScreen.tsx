@@ -52,7 +52,7 @@ export const HomeScreen: React.FC = () => {
 
   return (
     <View style={styles.container}>
-      <ScreenHeader title="PRED Agent" subtitle={feedsOk ? "Feeds connected" : undefined} mode={mode} paused={paused} />
+      <ScreenHeader title="PRED Agent" logo subtitle={feedsOk ? "Feeds connected" : undefined} mode={mode} paused={paused} />
       <ScrollView
         contentContainerStyle={styles.content}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={c.textSecondary} />}

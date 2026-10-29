@@ -40,7 +40,7 @@ where = ["src"]
 include = ["pred_agent*"]
 
 [tool.setuptools.package-data]
-pred_agent = ["control_api/web/*.html"]
+pred_agent = ["control_api/web/*.html", "control_api/web/*.svg", "control_api/web/*.png", "control_api/web/*.ico"]
 
 [tool.ruff]
 line-length = 100
