@@ -90,7 +90,7 @@ nav#tabbar{display:grid;grid-template-columns:repeat(5,1fr);background:var(--tab
 .btn.long{background:var(--long);border-color:var(--long);color:#fff}
 .btn.short{background:var(--short);border-color:var(--short);color:#fff}
 .btn.ghost{background:none}
-.btn.block{width:100%}
+.btn.block{width:100%;display:flex;align-items:center;justify-content:center;gap:8px}
 input,textarea{font:inherit;width:100%;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:var(--input);color:var(--text)}
 input.mono{font-family:var(--mono)}
 .err{color:var(--short);min-height:1.4em;font-size:13px}
@@ -144,6 +144,47 @@ input.mono{font-family:var(--mono)}
 .toast{position:fixed;left:50%;bottom:90px;transform:translate(-50%,10px);background:var(--alt);border:1px solid var(--line);padding:10px 16px;border-radius:12px;font-size:14px;font-weight:600;opacity:0;pointer-events:none;transition:opacity .2s,transform .2s;z-index:30;max-width:90vw}
 .toast.show{opacity:1;transform:translate(-50%,0)}
 .toast.bad{border-color:var(--short);color:var(--short)}
+
+/* layout helpers (all sizes) */
+.brand,.side-foot{display:none}
+.cols{display:block}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,320px),1fr));gap:12px;align-items:start}
+.cards.wide{grid-template-columns:repeat(auto-fill,minmax(min(100%,440px),1fr))}
+.cards>.card{margin-bottom:0}
+.cards>.card:has(.empty){grid-column:1/-1}
+@media(hover:hover){
+  .card.tap:hover{border-color:var(--primary)}
+  .btn:hover:not(:disabled){filter:brightness(1.12)}
+  .tab:hover,.seg button:not(.on):hover{color:var(--text)}
+  .chips button:hover,.panic:hover{background:var(--alt)}
+}
+
+/* desktop: sidebar nav + wide content */
+@media(min-width:960px){
+  #app{max-width:none;display:grid;grid-template-columns:248px minmax(0,1fr);grid-template-rows:auto auto minmax(0,1fr);
+    grid-template-areas:"side top" "side stale" "side main";border:0}
+  header.top{grid-area:top;padding:22px 32px 16px;border-bottom:1px solid var(--line);margin-bottom:22px}
+  header.top h1{font-size:26px}
+  .stale{grid-area:stale;margin:0 32px 16px}
+  main#view{grid-area:main;padding:0 max(32px,calc((100% - 1180px)/2)) 40px}
+  nav#tabbar{grid-area:side;display:flex;flex-direction:column;gap:4px;border-top:0;border-right:1px solid var(--line);padding:22px 14px}
+  .brand{display:flex;align-items:center;gap:10px;font-weight:800;font-size:18px;letter-spacing:-.02em;padding:2px 10px 22px}
+  .brand img{border-radius:8px}
+  .tab{flex-direction:row;justify-content:flex-start;gap:12px;font-size:14px;padding:11px 12px;border-radius:10px}
+  .tab.active{background:var(--primary-soft)}
+  .tab .badge{position:static;margin-left:auto}
+  .side-foot{display:block;margin-top:auto;padding-top:16px}
+  .cols{display:grid;grid-template-columns:1fr 1fr;gap:0 28px;align-items:start}
+  main#view[data-view=home]{display:grid;grid-template-columns:1fr 1fr;gap:0 28px;align-content:start}
+  [data-view=home] .span2{grid-column:1/-1}
+  .hero-v{font-size:46px}
+  .seg{max-width:440px}
+  .chatwrap{max-width:920px;margin:0 auto;width:100%}
+  .msg{max-width:min(86%,720px)}
+  .scrim{align-items:center}
+  .sheet{max-width:460px;border-radius:18px}
+  .toast{bottom:28px;left:calc(50% + 124px)}
+}
 @media(prefers-reduced-motion:reduce){.toast{transition:none}}
 </style>
 </head>
@@ -343,8 +384,11 @@ document.addEventListener("visibilitychange", () => { if (!document.hidden && to
 // ── Navigation ──
 const TABS = [["home", "Home"], ["live", "Live"], ["chat", "Chat"], ["position", "Position"], ["settings", "Settings"]];
 function buildChrome() {
+  $("tabbar").append(el("div", { class: "brand" }, el("img", { src: "/icon.svg", width: 30, height: 30, alt: "" }), "PRED Agent"));
   TABS.forEach(([k, label]) => $("tabbar").append(el("button", { class: "tab", id: "tab-" + k, onclick: () => go(k) },
     icon(k, 23), el("span", { textContent: label }), el("i", { class: "badge hidden", id: "badge-" + k }))));
+  TABS.forEach(([k, label], i) => { $("tab-" + k).title = label + " (" + (i + 1) + ")"; });
+  $("tabbar").append(el("div", { class: "side-foot" }, el("button", { class: "btn ghost block", onclick: () => { if (confirm("Sign out of this browser?")) logout(); } }, icon("logout", 18), "Log out")));
   $("backBtn").append(icon("back", 24));
   $("panicIc").append(icon("panic", 15));
   $("panicIc").style.display = "flex";
@@ -360,7 +404,7 @@ function render() {
   TABS.forEach(([k]) => $("tab-" + k).classList.toggle("active", k === S.tab));
   $("backBtn").classList.toggle("hidden", !d);
   v.classList.toggle("chatmode", !d && S.tab === "chat");
-  v.replaceChildren(); v.scrollTop = 0;
+  v.replaceChildren(); v.scrollTop = 0; v.dataset.view = d ? d.kind : S.tab;
   if (d) VIEWS[d.kind](v, d); else VIEWS[S.tab](v);
   paintStatus();
 }
@@ -400,7 +444,7 @@ const VIEWS = {};
 // ── Home ──
 VIEWS.home = (v) => {
   setHead("PRED Agent", "");
-  const hero = el("div"), dec = el("div"), live = el("div");
+  const hero = el("div", { class: "span2" }), dec = el("div"), live = el("div");
   v.append(hero, dec, live);
   const alive = mount(async () => {
     const [, p, f] = await Promise.all([refreshStatus(), api("/v1/proposals?status=pending"), api("/v1/fixtures?state=live")]);
@@ -431,7 +475,7 @@ VIEWS.home = (v) => {
 // ── Live / Upcoming ──
 VIEWS.live = (v) => {
   setHead("Live", "Matches the agent is watching");
-  const list = el("div");
+  const list = el("div", { class: "cards" });
   v.append(seg([["live", "Live now"], ["upcoming", "Upcoming"]], S.seg.live, (x) => { S.seg.live = x; render(); }), list);
   const alive = mount(async () => {
     const r = await api("/v1/fixtures?state=" + S.seg.live);
@@ -445,7 +489,7 @@ VIEWS.live = (v) => {
 // ── Fixture detail ──
 VIEWS.fixture = (v, d) => {
   setHead("Match", "");
-  const box = el("div"); v.append(box);
+  const box = el("div", { class: "cols" }); v.append(box);
   const alive = mount(async () => {
     const r = await api("/v1/fixtures/" + encodeURIComponent(d.id));
     if (!alive()) return;
@@ -456,17 +500,18 @@ VIEWS.fixture = (v, d) => {
     const out = [[fx.home_team || "Home", fx.p_fair_home, "long"], ["Draw", fx.p_fair_draw, "neutral"], [fx.away_team || "Away", fx.p_fair_away, "short"]];
     const hasP = out.some((o) => o[1] != null);
     const sources = (fx.research_sources || []).map((s) => { const u = safeUrl(s); return u ? el("div", null, el("a", { href: u, target: "_blank", rel: "noopener noreferrer", style: "color:var(--primary);word-break:break-all", textContent: s })) : el("div", { class: "note", textContent: s }); });
-    fill(box,
+    fill(box, el("div", null,
       card(el("div", { class: "row", style: "margin-bottom:6px" }, live ? chip(fx.minute != null ? "LIVE · " + fx.minute + "′" : "LIVE", "short") : chip(dt(fx.kickoff_dhaka || fx.kickoff), "neutral"), fx.game_status ? chip(fx.game_status) : null),
         el("div", { class: "bigteams" }, el("b", { textContent: fx.home_team || "?" }), el("b", { textContent: fx.away_team || "?" })),
         el("div", { class: "bigscore", textContent: fx.home_score != null ? fx.home_score + " – " + (fx.away_score != null ? fx.away_score : 0) : "vs" })),
       section("Agent’s fair probability"),
       card(hasP ? out.map(([n, p, side]) => el("div", null, el("div", { class: "row" }, el("b", { class: "grow truncate", textContent: n }), el("b", { class: "mono", textContent: p != null ? (p * 100).toFixed(0) + "%" : "—" })), gauge(p, side)))
         : empty("No estimate yet", "The agent hasn’t produced a fair probability for this match."),
-        fx.max_suggested_usd ? el("div", { class: "note", textContent: "Max suggested stake: " + usd(fx.max_suggested_usd) }) : null),
+        fx.max_suggested_usd ? el("div", { class: "note", textContent: "Max suggested stake: " + usd(fx.max_suggested_usd) }) : null)),
+      el("div", null,
       (fx.markets || []).length ? [section("Market quotes"), card(...fx.markets.map((m) => el("div", { class: "kv" }, el("span", { class: "truncate", textContent: m.market_id }),
         el("span", { class: "mono", textContent: (m.best_bid_cents != null ? m.best_bid_cents : "—") + " / " + (m.best_ask_cents != null ? m.best_ask_cents : "—") + "¢" }))))] : null,
-      fx.research_summary ? [section("Research"), card(el("div", { style: "white-space:pre-wrap", textContent: fx.research_summary }), sources.length ? el("div", { style: "margin-top:10px;font-size:13px" }, sources) : null)] : null);
+      fx.research_summary ? [section("Research"), card(el("div", { style: "white-space:pre-wrap", textContent: fx.research_summary }), sources.length ? el("div", { style: "margin-top:10px;font-size:13px" }, sources) : null)] : null));
   });
 };
 
@@ -508,7 +553,7 @@ function proposalCard(p, reload) {
 }
 VIEWS.proposals = (v) => {
   setHead("Proposals", "Review and decide");
-  const list = el("div"); v.append(list);
+  const list = el("div", { class: "cards wide" }); v.append(list);
   const alive = mount(async () => {
     const r = await api("/v1/proposals?status=pending");
     if (!alive()) return;
@@ -525,7 +570,7 @@ function orderTone(state) {
 }
 VIEWS.position = (v) => {
   setHead("Position", "Positions, orders and exit rules");
-  const list = el("div");
+  const list = el("div", { class: "cards" });
   v.append(seg([["positions", "Positions"], ["orders", "Orders"], ["rules", "Rules"]], S.seg.pos, (x) => { S.seg.pos = x; render(); }), list);
   const alive = mount(async () => {
     const kind = S.seg.pos;
@@ -586,8 +631,10 @@ function ruleCard(rule) {
 VIEWS.settings = (v) => {
   setHead("Settings", "");
   const trade = el("div"), limits = el("div"), devs = el("div"), llm = el("div");
-  v.append(section("Trading"), trade, section("Limits"), limits, section("Devices"), devs, section("Language model"), llm,
-    section("Account"), card(el("button", { class: "btn block", onclick: () => { if (confirm("Sign out of this browser?")) logout(); } }, "Log out")));
+  v.append(el("div", { class: "cols" },
+    el("div", null, section("Trading"), trade, section("Limits"), limits),
+    el("div", null, section("Devices"), devs, section("Language model"), llm,
+      section("Account"), card(el("button", { class: "btn block", onclick: () => { if (confirm("Sign out of this browser?")) logout(); } }, "Log out")))));
   const paintTrade = () => {
     const s = S.status || {};
     trade.replaceChildren(card(kv("Mode", s.mode || "—"), kv("Auth", s.auth_mode || "—"), kv("Data feeds", s.feeds_ok ? "connected" : "offline"), kv("Agent", s.paused ? "paused" : "running"),
@@ -783,7 +830,15 @@ $("panicYes").onclick = async () => {
   toast(r.ok ? "Panic done — agent paused, orders cancelled" : errOf(r), !r.ok);
   await refreshStatus(); if (S.reload) S.reload();
 };
-document.addEventListener("keydown", (e) => { if (e.key === "Escape") $("sheet").classList.add("hidden"); });
+document.addEventListener("keydown", (e) => {
+  const sheetOpen = !$("sheet").classList.contains("hidden");
+  if (e.key === "Escape") { if (sheetOpen) $("sheet").classList.add("hidden"); else if (S.detail) history.back(); return; }
+  // Desktop shortcuts: 1–5 switch tabs (ignored while typing or with modifiers).
+  const t = document.activeElement, typing = t && /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName);
+  if (typing || sheetOpen || e.ctrlKey || e.metaKey || e.altKey || !token) return;
+  const i = parseInt(e.key, 10);
+  if (i >= 1 && i <= TABS.length) go(TABS[i - 1][0]);
+});
 
 buildChrome();
 if (token) showApp(); else $("login").classList.remove("hidden");

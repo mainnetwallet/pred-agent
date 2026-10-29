@@ -38,3 +38,11 @@ def test_index_links_pwa_assets():
     for tab in ("Home", "Live", "Chat", "Position", "Settings"):
         assert f'"{tab}"' in html
 
+
+
+def test_index_has_desktop_layout():
+    html = INDEX.read_text(encoding="utf-8")
+    # wide screens switch the bottom tabs to a left sidebar with multi-column content
+    assert "@media(min-width:960px)" in html
+    assert 'class: "brand"' in html and 'class: "side-foot"' in html
+    assert "grid-template-areas" in html
