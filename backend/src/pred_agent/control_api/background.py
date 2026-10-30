@@ -229,6 +229,11 @@ class RulesMonitor:
         alert_fn: AlertFn | None = None,
     ) -> dict[str, int]:
         stats = {"evaluated": 0, "fired": 0, "blocked": 0, "unblocked": 0, "expired": 0}
+        # Resting-limit entries that have filled since the last pass get their exit rules now.
+        for armed in controller.autopilot.apply_pending_plans():
+            await self._publish(bus, "exit_plan_armed", armed)
+            if alert_fn is not None:
+                await alert_fn(f"🎯 entry filled — exit rules armed for {armed['market_id'][:10]}")
         for rule in list(controller.rules.list_all()):
             if rule.status not in (STATUS_ACTIVE, STATUS_BLOCKED):
                 continue
@@ -241,9 +246,9 @@ class RulesMonitor:
                     await self._publish(bus, "rule_updated", {"rule_id": rule.id, "status": "EXPIRED"})
                 continue
 
-            if controller.mode == "LIVE":
+            if controller.mode == "LIVE" and not controller.settings.chat_autopilot:
                 # Rules fire through the paper executor, which must never "close" a real
-                # position. Automated live exits are not enabled: fail closed and say so.
+                # position. With autopilot off, automated live exits stay disabled.
                 if controller.rules.mark_blocked(
                     rule, "LIVE mode: automated exits are not enabled; close the position manually"
                 ):
@@ -271,6 +276,22 @@ class RulesMonitor:
                 if controller.rules.mark_blocked(rule, "book has no evaluable price (fail closed)"):
                     stats["blocked"] += 1
                     await self._on_blocked(rule, bus, alert_fn)
+                continue
+
+            if controller.mode == "LIVE":
+                # Autopilot: real reduce-only exits (market IOC or resting limit), reported back.
+                event = await asyncio.to_thread(
+                    controller.autopilot.live_rule_step, rule, pos, snapshot, price,
+                )
+                if event is not None:
+                    if event["event"] == "done":
+                        stats["fired"] += 1
+                    await self._publish(bus, "rule_updated", {
+                        "rule_id": rule.id, "status": rule.status, "event": event["event"],
+                        "report": event.get("report"),
+                    })
+                    if alert_fn is not None:
+                        await alert_fn(event["text"])
                 continue
 
             fired = await controller.rules.try_fire(

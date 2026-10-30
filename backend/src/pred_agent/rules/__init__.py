@@ -42,6 +42,18 @@ TRIGGER_PROFIT_USD = "profit_usd"
 TRIGGER_LOSS_USD = "loss_usd"
 TRIGGER_PRICE_CENTS = "price_cents"
 TRIGGER_PROFIT_PCT = "profit_pct"
+TRIGGER_LOSS_PCT = "loss_pct"
+TRIGGER_DEADLINE_TS = "deadline_ts"   # trigger_value = unix seconds; fires at/after that time
+
+# Rule kinds
+KIND_TAKE_PROFIT = "take_profit"
+KIND_STOP_LOSS = "stop_loss"
+KIND_TIME_EXIT = "time_exit"          # sell whatever is left when time runs out
+
+# How an exit executes: "market" = immediate marketable sell when the trigger fires;
+# "limit" = rest a reduce-only limit sell at the trigger price as soon as the rule is armed.
+EXEC_MARKET = "market"
+EXEC_LIMIT = "limit"
 
 # How long a PENDING rule survives without confirmation
 RULE_PENDING_TTL_HOURS = 24
@@ -77,6 +89,8 @@ class Rule:
         last_eval_note: str | None = None,
         order_id: str | None = None,
         blocked_since: datetime | None = None,
+        exec_mode: str = EXEC_MARKET,
+        resting_order_id: str | None = None,
     ) -> None:
         self.id = id
         self.market_id = market_id
@@ -96,6 +110,8 @@ class Rule:
         self.last_eval_note = last_eval_note
         self.order_id = order_id
         self.blocked_since = blocked_since
+        self.exec_mode = exec_mode
+        self.resting_order_id = resting_order_id
         self._lock: asyncio.Lock = asyncio.Lock()
 
     def to_dict(self) -> dict[str, Any]:
@@ -117,6 +133,8 @@ class Rule:
             "last_eval_at": self.last_eval_at.isoformat() if self.last_eval_at else None,
             "last_eval_note": self.last_eval_note,
             "order_id": self.order_id,
+            "exec_mode": self.exec_mode,
+            "resting_order_id": self.resting_order_id,
         }
 
 
@@ -147,6 +165,8 @@ class RulesService:
         size: str = "all",
         created_via: str = "chat",
         mode: str = "PAPER",
+        exec_mode: str = EXEC_MARKET,
+        expires_at: datetime | None = None,
     ) -> Rule:
         rule = Rule(
             id=str(uuid.uuid4()),
@@ -160,6 +180,8 @@ class RulesService:
             status=STATUS_PENDING,
             created_via=created_via,
             mode=mode,
+            exec_mode=exec_mode,
+            expires_at=expires_at,
         )
         self._rules[rule.id] = rule
         self._persist(rule)
@@ -292,7 +314,7 @@ class RulesService:
             "fee_usd": fee_usd,
         }
 
-    def should_trigger(
+    def should_trigger(  # noqa: PLR0911
         self,
         rule: Rule,
         *,
@@ -325,6 +347,12 @@ class RulesService:
         elif tt == TRIGGER_PROFIT_PCT:
             fire = pnl["profit_pct"] >= tv
             return fire, f"profit_pct={pnl['profit_pct']:.2f}% >= {tv}%"
+        elif tt == TRIGGER_LOSS_PCT:
+            fire = -pnl["profit_pct"] >= tv
+            return fire, f"loss_pct={-pnl['profit_pct']:.2f}% >= {tv}%"
+        elif tt == TRIGGER_DEADLINE_TS:
+            now_ts = Decimal(str(_now().timestamp()))
+            return now_ts >= tv, f"deadline {tv} (now {now_ts:.0f})"
         return False, f"unknown trigger_type={tt}"
 
     async def try_fire(

@@ -93,6 +93,9 @@ class LiveOrderIntent:
     # trades leave min_edge_pp as None and skip the edge gate.
     p_fair: Decimal | None = None
     min_edge_pp: Decimal | None = None
+    # Limit price chosen by the human: skips the spread/one-sided/"book moved" guards that
+    # exist to catch agent-chosen prices. A resting order at the user's own price is theirs.
+    user_priced: bool = False
 
 
 def _json_or_none(raw: str | None) -> dict[str, Any] | None:
@@ -396,6 +399,8 @@ class LiveExecutor:
         tol = self.max_slippage_pp
         is_long = intent.side == "long"
 
+        if intent.user_priced and intent.order_type == "limit":
+            return None
         if not intent.reduce_only:
             if not book.bids or not book.asks:
                 return "order book is one-sided; refusing to open"

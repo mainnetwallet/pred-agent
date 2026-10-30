@@ -36,6 +36,35 @@ approve/confirm/cancel-order show a confirm card instead of executing from one l
 always asks for confirmation. By click: the match page has **Buy YES / Buy NO**, each position has an
 **Auto-exit** (take-profit / stop-loss) form.
 
+### Chat autopilot (default ON: `CHAT_AUTOPILOT=true`)
+
+The chat assistant acts directly, with no approve card, and reports the **real** outcome
+(`FILLED`, `PARTIAL`, `RESTING`, `NOT_FILLED`, `FAILED`, `UNKNOWN`, `ERROR` + the reason).
+Say it in plain language (English / Bangla / Banglish):
+
+- *"1 usdc yes trade koro"* → market buy (marketable IOC, slippage-capped). With a price
+  (*"55 limit e buy"*) → a limit order at that price.
+- *"10% profit hole market e sell"* → take-profit rule, market sell. *"80 e gele sell"* → a resting
+  limit sell at 80¢. *"30 minute por / kickoff er 10 min age sell"* → time exit: cancels the resting
+  sell and market-sells what is left. Optional stop-loss (`%` or price).
+- Cancel an order / all orders, close a position, set exit rules on an existing position, pause /
+  resume / panic, change limits (within the configured ceilings) — all by chat.
+- Upcoming matches can be traded too; entries on a resting limit order arm their exit plan once
+  the order fills (kept in memory: lost on a restart).
+- *"Arsenal vs Chelsea ke jitbe?"* → `research_match`: recent form, head-to-head, goals model and
+  PRED market odds blended into win/draw/loss %, with confidence and data gaps. Set
+  `SPORTS_API_KEY` (TheSportsDB) — the free public key returns very little.
+- **Withdrawals always need one human tap.** `request_withdraw` only creates a confirm card; the
+  tap calls `POST /v1/withdrawals/{id}/confirm` (`X-Confirm` in LIVE). The LLM has no way to confirm.
+  Funds go from the PRED Safe to the recipient (default: your owner wallet) via a direct Safe
+  `execTransaction` on Base, paid for in ETH by the owner wallet (needs `BASE_RPC_URL`). **Not yet
+  exercised on mainnet: try $1 first.**
+
+Still enforced: `max_trade_usd`, daily loss, max open positions, fresh-book / fee-target / UNKNOWN-order
+guards, and one live placement at a time. An UNKNOWN outcome is never retried. Slash commands
+(`/buy`, `/approve` …) keep the supervised pending-card flow. Set `CHAT_AUTOPILOT=false` to restore
+the old behaviour for the chat assistant (LIVE rules then stay blocked as before).
+
 ---
 
 ## 1. Start the agent

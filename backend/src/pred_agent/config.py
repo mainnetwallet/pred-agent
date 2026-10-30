@@ -69,6 +69,10 @@ class Settings(BaseSettings):
 
     # Operational flags
     live_trading: bool = False
+    # Chat autopilot: the chat assistant executes trades, exits, cancels, pause/resume and
+    # limit changes directly (no approve card). Withdrawals ALWAYS need one human confirm.
+    chat_autopilot: bool = True
+    withdraw_confirm_ttl_seconds: int = 300
     control_api_bind: str | None = None
     database_url: str | None = None
 

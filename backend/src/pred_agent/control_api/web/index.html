@@ -968,6 +968,21 @@ function renderCard(card) {
     }
     return wrap;
   }
+  if (card.type === "trade_result") {
+    const good = d.ok === true;
+    wrap.append(el("h4", { textContent: ((d.kind || "trade") + "").replace(/_/g, " ").toUpperCase() + " · " + (d.status || "?") }));
+    const bits = [];
+    if (d.side) bits.push((d.side === "long" ? "YES" : "NO") + " " + (d.order_type || "") + (d.price_cents ? " @ " + d.price_cents + "¢" : ""));
+    if (d.filled_shares && d.filled_shares !== "0") bits.push(d.filled_shares + " shares filled");
+    if (d.position) bits.push("position " + d.position.shares + " sh @ " + d.position.avg_price_cents + "¢ ($" + d.position.cost_usd + ")");
+    if (d.remaining_shares) bits.push(d.remaining_shares + " shares still open");
+    if (d.plan) bits.push(d.plan.join("; "));
+    if (d.exit_plan && d.exit_plan.plan) bits.push("exit plan: " + d.exit_plan.plan.join("; ") + (d.exit_plan.armed ? " (armed)" : " (arms when filled)"));
+    if (d.reason) bits.push("why: " + d.reason);
+    if (d.note) bits.push(d.note);
+    wrap.append(el("div", { class: good ? "" : "warn", textContent: bits.join(" · ") || (good ? "OK" : "Not completed") }));
+    return wrap;
+  }
   if (card.type === "action") {
     wrap.append(el("h4", { textContent: "Action required" }), el("div", { textContent: d.label || "Confirm this action?" }));
     const go2 = el("button", { class: "btn short", textContent: "Confirm" });
@@ -979,6 +994,7 @@ function renderCard(card) {
       else if (d.action === "panic") r = await post("/v1/panic", {}, true);
       else if (d.action === "cancel_order") r = await post("/v1/orders/" + encodeURIComponent(d.order_id) + "/cancel", {}, true);
       else if (d.action === "cancel_rule") r = await post("/v1/rules/" + encodeURIComponent(d.rule_id) + "/cancel", {}, true);
+      else if (d.action === "withdraw") r = await post("/v1/withdrawals/" + encodeURIComponent(d.withdraw_id) + "/confirm", {}, true);
       else return;
       done(go2, r, "Done ✓"); refreshStatus();
     };

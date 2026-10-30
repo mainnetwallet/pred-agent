@@ -158,6 +158,14 @@ class ApiClient {
     });
   }
 
+  // Withdrawals: the one action that always needs a human confirm tap.
+  async confirmWithdrawal(id: string, xConfirm?: string): Promise<ApiEnvelope<Record<string, unknown>>> {
+    return this.request<Record<string, unknown>>(`/v1/withdrawals/${id}/confirm`, {
+      method: "POST",
+      headers: xConfirm ? { "X-Confirm": xConfirm } : {},
+    });
+  }
+
   // ── Positions ─────────────────────────────────────────────
   async getPositions(): Promise<ApiEnvelope<Position[]>> {
     return this.request<Position[]>("/v1/positions");

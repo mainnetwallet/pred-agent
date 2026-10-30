@@ -29,9 +29,11 @@ from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingRes
 from pred_agent.book import BookAnalyzer
 from pred_agent.config import load_settings
 from pred_agent.control_api.auth import DeviceAuth
+from pred_agent.control_api.autopilot import ExitPlan, deadline_from
 from pred_agent.control_api.commands import CommandContext, is_command, run_command
 from pred_agent.control_api.controller import AgentController, to_jsonable
 from pred_agent.control_api.session import LoginManager
+from pred_agent.control_api.withdraw import WithdrawService
 from pred_agent.events import Event, EventBus
 from pred_agent.execution.live_runtime import MarketContext
 from pred_agent.llm import LLMRequest, OpenAICompatClient, build_llm_client
@@ -327,6 +329,7 @@ class FixtureCache:
                 "markets": [
                     {
                         "market_id": m.get("market_id"),
+                        "name": m.get("name"),
                         "status": m.get("status"),
                         "best_bid_cents": None,
                         "best_ask_cents": None,
@@ -530,6 +533,17 @@ def create_app(*, background: bool = False) -> FastAPI:  # noqa: PLR0915
         if fwd:
             return fwd.split(",")[-1].strip()
         return request.client.host if request.client else "?"
+
+    # ── fund withdrawal: intent -> ONE human confirm -> on-chain send ──
+    def _safe_address() -> str | None:
+        rt = controller.live
+        return getattr(getattr(rt, "executor", None), "proxy_address", None) if rt else None
+
+    withdraw_svc = WithdrawService(
+        settings=settings, safe_address_provider=_safe_address,
+        balance_provider=lambda: controller.status().get("balance"),
+    )
+    app.state.withdraw = withdraw_svc
 
     # ── build chat LLM with read-only + PENDING-only write tools ──
 
@@ -739,6 +753,309 @@ def create_app(*, background: bool = False) -> FastAPI:  # noqa: PLR0915
             })
             return {"card_created": "panic"}, [card]
 
+        # ── autopilot tools (execute directly, report the real outcome) ──
+
+        def _opt_dec(v: Any, name: str, *, lo: Decimal | None = None,
+                     hi: Decimal | None = None) -> Decimal | None:
+            if v in (None, ""):
+                return None
+            try:
+                d = Decimal(str(v))
+            except InvalidOperation:
+                raise ValueError(f"{name} must be a number") from None
+            if not d.is_finite() or d <= 0 or (lo is not None and d <= lo) or (hi is not None and d >= hi):
+                raise ValueError(f"{name} is out of range")
+            return d
+
+        async def _fresh_book(market_id: str) -> Any:
+            bf = _book()
+            if bf is None:
+                return None
+            snap = bf.get_book(market_id)
+            if snap is None:
+                parent = getattr(bf, "parent_of", lambda _m: None)(market_id)
+                if parent is None:
+                    found = _find_market(market_id)
+                    if found is not None:
+                        parent = found["fixture"].get("parent_market_id")
+                fetch = getattr(bf, "fetch_book_rest", None)
+                if parent and fetch is not None:
+                    snap = await fetch(parent, market_id)
+            return BookAnalyzer().analyze(snap) if snap is not None else None
+
+        def _plan_from(market_id: str, a: dict[str, Any]) -> ExitPlan:
+            hundred = Decimal(100)
+            return ExitPlan(
+                market_id=market_id,
+                tp_pct=_opt_dec(a.get("take_profit_pct"), "take_profit_pct"),
+                tp_price_cents=_opt_dec(a.get("take_profit_price_cents"), "take_profit_price_cents",
+                                        hi=hundred),
+                sl_pct=_opt_dec(a.get("stop_loss_pct"), "stop_loss_pct", hi=hundred + 1),
+                sl_price_cents=_opt_dec(a.get("stop_loss_price_cents"), "stop_loss_price_cents",
+                                        hi=hundred),
+                deadline_ts=deadline_from(
+                    minutes=float(a["sell_after_minutes"]) if a.get("sell_after_minutes") else None,
+                    at_iso=a.get("sell_at") or None,
+                ),
+            )
+
+        _PLAN_KEYS = ("take_profit_pct", "take_profit_price_cents", "stop_loss_pct",
+                      "stop_loss_price_cents", "sell_after_minutes", "sell_at")
+
+        async def _place_trade(
+            market_id: str, side: str, amount_usd: str, order_type: str = "market",
+            limit_price_cents: str | None = None, **plan_args: Any,
+        ) -> tuple[dict[str, Any], list[Card]]:
+            fail = lambda why: ({"status": "FAILED", "ok": False, "reason": why}, [])  # noqa: E731
+            found = _find_market(market_id)
+            if found is None:
+                return fail(f"market {market_id} is not in the current fixture feed")
+            side_n = str(side).lower()
+            side_n = ("long" if side_n in ("buy", "yes", "long") else
+                      "short" if side_n in ("sell", "no", "short") else "")
+            if not side_n:
+                return fail("side must be long (YES) or short (NO)")
+            ot = str(order_type or "market").lower()
+            if ot not in ("market", "limit"):
+                return fail("order_type must be market or limit")
+            try:
+                amount = _opt_dec(amount_usd, "amount_usd")
+                limit_px = _opt_dec(limit_price_cents, "limit_price_cents", hi=Decimal(100))
+                plan = _plan_from(market_id, {k: plan_args.get(k) for k in _PLAN_KEYS})
+            except (ValueError, TypeError) as exc:
+                return fail(str(exc))
+            if amount is None:
+                return fail("amount_usd is required")
+            book = await _fresh_book(market_id) if ot == "market" else None
+            fixture = found["fixture"]
+            report = await asyncio.to_thread(
+                controller.autopilot.trade,
+                market_id=market_id, parent_market_id=fixture.get("parent_market_id", ""),
+                fixture_id=fixture.get("id", ""), side=side_n, amount_usd=amount,
+                order_type=ot, limit_price_cents=limit_px, book=book, plan=plan,
+            )
+            await bus.publish(Event("autopilot_trade", report))
+            return report, [Card("trade_result", report)]
+
+        async def _sell_position(
+            market_id: str, order_type: str = "market", limit_price_cents: str | None = None,
+        ) -> tuple[dict[str, Any], list[Card]]:
+            ot = str(order_type or "market").lower()
+            try:
+                limit_px = _opt_dec(limit_price_cents, "limit_price_cents", hi=Decimal(100))
+            except ValueError as exc:
+                return {"status": "FAILED", "ok": False, "reason": str(exc)}, []
+            book = await _fresh_book(market_id) if ot == "market" else None
+            report = await asyncio.to_thread(
+                controller.autopilot.exit_now, market_id=market_id, book=book,
+                mode="limit" if ot == "limit" else "market", limit_price_cents=limit_px,
+            )
+            await bus.publish(Event("autopilot_trade", report))
+            return report, [Card("trade_result", report)]
+
+        async def _cancel_order_now(order_id: str) -> tuple[dict[str, Any], list[Card]]:
+            out = await asyncio.to_thread(controller.autopilot.cancel_order, order_id)
+            return out, [Card("trade_result", {**out, "kind": "cancel"})]
+
+        async def _cancel_all_orders() -> tuple[dict[str, Any], list[Card]]:
+            out = await asyncio.to_thread(controller.autopilot.cancel_all_orders)
+            return out, [Card("trade_result", {**out, "kind": "cancel_all"})]
+
+        async def _set_exit_rules(market_id: str, **plan_args: Any) -> tuple[dict[str, Any], list[Card]]:
+            pos = controller.positions.get_position(market_id)
+            if pos is None or pos.status != "open":
+                return {"status": "FAILED", "ok": False,
+                        "reason": f"no open position for market {market_id}"}, []
+            try:
+                plan = _plan_from(market_id, {k: plan_args.get(k) for k in _PLAN_KEYS})
+            except (ValueError, TypeError) as exc:
+                return {"status": "FAILED", "ok": False, "reason": str(exc)}, []
+            if plan.is_empty():
+                return {"status": "FAILED", "ok": False, "reason": "no exit condition given"}, []
+            rules = await asyncio.to_thread(controller.autopilot.arm_exits, pos, plan)
+            ok = bool(rules) and all("error" not in r for r in rules)
+            out = {"status": "ARMED" if ok else "FAILED", "ok": ok, "rules": rules,
+                   "plan": plan.describe()}
+            return out, [Card("trade_result", {**out, "kind": "exit_rules"})]
+
+        async def _cancel_rule_now(rule_id: str) -> tuple[dict[str, Any], list[Card]]:
+            rule = controller.rules.get(rule_id)
+            if rule is None:
+                return {"status": "FAILED", "ok": False, "reason": f"rule {rule_id} not found"}, []
+            if rule.resting_order_id:
+                await asyncio.to_thread(controller.autopilot.cancel_resting_exits, rule.market_id)
+            done = controller.cancel_rule(rule_id)
+            return ({"status": "CANCELLED", "ok": True, "rule_id": rule_id} if done else
+                    {"status": "FAILED", "ok": False, "reason": "rule already finished"}), []
+
+        async def _pause_agent() -> dict[str, Any]:
+            controller.pause()
+            return {"status": "PAUSED", "ok": True, "note": "new entries blocked; exit rules keep running"}
+
+        async def _resume_agent() -> dict[str, Any]:
+            controller.resume()
+            return {"status": "RUNNING", "ok": True}
+
+        async def _panic_stop() -> dict[str, Any]:
+            out = await asyncio.to_thread(controller.panic)
+            await bus.publish(Event("panic", out))
+            return {"status": "PANIC_DONE", "ok": True, **out}
+
+        async def _set_limit(name: str, value: str) -> dict[str, Any]:
+            err = controller.set_limits({name: value})
+            return ({"status": "FAILED", "ok": False, "reason": err} if err else
+                    {"status": "UPDATED", "ok": True, "limits": controller.limits_list()})
+
+        async def _request_withdraw(
+            amount_usd: str, to_address: str | None = None,
+        ) -> tuple[dict[str, Any], list[Card]]:
+            intent, err = withdraw_svc.create(amount_usd=amount_usd, recipient=to_address)
+            if intent is None:
+                return {"status": "FAILED", "ok": False, "reason": err}, []
+            card = Card("action", {
+                "action": "withdraw", "withdraw_id": intent.id,
+                "label": (f"WITHDRAW {intent.amount_usd} USDC to {intent.recipient}? "
+                          "This sends real funds out of your PRED account."),
+            })
+            return {"status": "AWAITING_CONFIRMATION", "ok": True, **intent.to_dict(),
+                    "note": "NOTHING has been sent. The human must tap Confirm on the card."}, [card]
+
+        def _outcome_roles(fx: dict[str, Any]) -> dict[str, dict[str, Any]]:
+            roles: dict[str, dict[str, Any]] = {}
+            h, a = str(fx.get("home_team") or "").lower(), str(fx.get("away_team") or "").lower()
+            for m in fx.get("markets", []):
+                nm = str(m.get("name") or "").lower()
+                role = ("draw" if ("draw" in nm or "tie" in nm) else
+                        "home" if h and h in nm else "away" if a and a in nm else None)
+                if role and role not in roles:
+                    roles[role] = m
+            return roles
+
+        async def _research_match(fixture_id: str) -> tuple[dict[str, Any], list[Card]]:
+            from pred_agent.research.match import MatchResearcher
+
+            fx = next((f for f in fixture_cache.list()
+                       if f.get("id") == fixture_id or f.get("parent_market_id") == fixture_id), None)
+            if fx is None:
+                return {"error": f"fixture {fixture_id} not found"}, []
+            roles = _outcome_roles(fx)
+            probs: dict[str, Decimal | None] = {}
+            market_ids: dict[str, str] = {}
+            for role, m in roles.items():
+                market_ids[role] = m.get("market_id")
+                snap = await _fresh_book(m.get("market_id"))
+                probs[role] = (snap.mid_price_cents / 100) if snap is not None and snap.mid_price_cents is not None else None
+            researcher = MatchResearcher(api_key=settings.sports_api_key)
+            out = await asyncio.to_thread(
+                researcher.research, home=str(fx.get("home_team")), away=str(fx.get("away_team")),
+                league=fx.get("league"), market_probs=probs,
+            )
+            out["markets"] = market_ids
+            out["kickoff_dhaka"] = fx.get("kickoff_dhaka")
+            return out, [Card("research", out)]
+
+        _plan_props = {
+            "take_profit_pct": {"type": "string", "description": "sell at market when net profit reaches this % (e.g. 10)"},
+            "take_profit_price_cents": {"type": "string", "description": "rest a limit sell at this price in cents (e.g. 80)"},
+            "stop_loss_pct": {"type": "string", "description": "market sell when net loss reaches this %"},
+            "stop_loss_price_cents": {"type": "string", "description": "market sell when price falls to this many cents"},
+            "sell_after_minutes": {"type": "string", "description": "market sell whatever is left after N minutes"},
+            "sell_at": {"type": "string", "description": "market sell at this ISO-8601 time (UTC)"},
+        }
+
+        def _schema(props: dict[str, Any], required: list[str]) -> dict[str, Any]:
+            return {"type": "object", "properties": props, "required": required}
+
+        autopilot_tools = [
+            Tool(
+                name="place_trade",
+                description=(
+                    "EXECUTE a buy now and return the real outcome (status FILLED/PARTIAL/RESTING/"
+                    "NOT_FILLED/FAILED/UNKNOWN). side long=YES, short=NO. order_type market (default, "
+                    "marketable with slippage cap) or limit (needs limit_price_cents). Optional exit plan "
+                    "arms automatically: take_profit_pct, take_profit_price_cents, stop_loss_*, "
+                    "sell_after_minutes / sell_at."
+                ),
+                parameters=_schema({
+                    "market_id": {"type": "string"},
+                    "side": {"type": "string", "enum": ["long", "short"]},
+                    "amount_usd": {"type": "string", "description": "USD to spend"},
+                    "order_type": {"type": "string", "enum": ["market", "limit"]},
+                    "limit_price_cents": {"type": "string"},
+                    **_plan_props,
+                }, ["market_id", "side", "amount_usd"]),
+                fn=_place_trade,
+            ),
+            Tool(
+                name="sell_position",
+                description="EXECUTE a sell of the whole open position now (market by default, or a "
+                            "resting limit sell with limit_price_cents). Returns the real outcome.",
+                parameters=_schema({
+                    "market_id": {"type": "string"},
+                    "order_type": {"type": "string", "enum": ["market", "limit"]},
+                    "limit_price_cents": {"type": "string"},
+                }, ["market_id"]),
+                fn=_sell_position,
+            ),
+            Tool(
+                name="cancel_order",
+                description="Cancel one open order immediately (order id or unique prefix).",
+                parameters=_schema({"order_id": {"type": "string"}}, ["order_id"]),
+                fn=_cancel_order_now,
+            ),
+            Tool(
+                name="cancel_all_orders",
+                description="Cancel ALL open orders immediately (does not pause the agent).",
+                parameters=_schema({}, []),
+                fn=_cancel_all_orders,
+            ),
+            Tool(
+                name="set_exit_rules",
+                description="Arm automatic exits on an EXISTING position immediately (no confirm): "
+                            "take_profit_pct, take_profit_price_cents (limit sell), stop_loss_pct, "
+                            "stop_loss_price_cents, sell_after_minutes / sell_at (time exit).",
+                parameters=_schema({"market_id": {"type": "string"}, **_plan_props}, ["market_id"]),
+                fn=_set_exit_rules,
+            ),
+            Tool(
+                name="cancel_rule",
+                description="Cancel an exit rule immediately (also pulls its resting limit sell).",
+                parameters=_schema({"rule_id": {"type": "string"}}, ["rule_id"]),
+                fn=_cancel_rule_now,
+            ),
+            Tool(name="pause_agent", description="Pause new entries now (exits keep running).",
+                 parameters=_schema({}, []), fn=_pause_agent),
+            Tool(name="resume_agent", description="Resume the agent now.",
+                 parameters=_schema({}, []), fn=_resume_agent),
+            Tool(name="panic_stop",
+                 description="PANIC now: pause, reject proposals, cancel all orders and all rules.",
+                 parameters=_schema({}, []), fn=_panic_stop),
+            Tool(
+                name="set_limit",
+                description="Change a trading limit (max_trade_usd, daily_loss_usd, max_open_positions) "
+                            "within its configured hard ceiling.",
+                parameters=_schema({"name": {"type": "string"}, "value": {"type": "string"}},
+                                   ["name", "value"]),
+                fn=_set_limit,
+            ),
+            Tool(
+                name="request_withdraw",
+                description="Start a fund withdrawal. Creates a confirmation card ONLY: the human must "
+                            "tap Confirm; nothing is sent by this call. Recipient defaults to the owner wallet.",
+                parameters=_schema({"amount_usd": {"type": "string"}, "to_address": {"type": "string"}},
+                                   ["amount_usd"]),
+                fn=_request_withdraw,
+            ),
+            Tool(
+                name="research_match",
+                description="Research a fixture: both teams' recent form, head-to-head, goals model and "
+                            "market-implied odds, combined into win/draw/loss %. Also returns the market "
+                            "ids per outcome. Use before answering who is likelier to win.",
+                parameters=_schema({"fixture_id": {"type": "string"}}, ["fixture_id"]),
+                fn=_research_match,
+            ),
+        ]
+
         tools = [
             Tool(
                 name="list_fixtures",
@@ -914,14 +1231,27 @@ def create_app(*, background: bool = False) -> FastAPI:  # noqa: PLR0915
                 fn=_request_panic,
             ),
         ]
-        app.state.chat_tools = [t.name for t in tools]
-        app.state.chat_tool_fns = {t.name: t.fn for t in tools}
+        # Legacy "create a pending card" tools stay registered for the REST/slash flows
+        # (/v1/proposals, /buy ...). The LLM sees them only when autopilot is off.
+        legacy_write = {"propose_trade", "create_rule", "close_position", "cancel_order",
+                        "cancel_rule", "request_pause", "request_resume", "request_panic"}
+        read_tools = [t for t in tools if t.name not in legacy_write]
+        legacy_tools = [t for t in tools if t.name in legacy_write]
+        autopilot_on = bool(getattr(settings, "chat_autopilot", False))
+        llm_tools = read_tools + (autopilot_tools if autopilot_on else legacy_tools)
+        app.state.chat_tools = [t.name for t in llm_tools]
+        # Slash commands/REST keep using the legacy fns for the names they know; the new
+        # autopilot-only tools (place_trade ...) are registered only when autopilot is on.
+        extra = [t for t in autopilot_tools if t.name not in legacy_write] if autopilot_on else []
+        app.state.chat_tool_fns = {t.name: t.fn for t in [*read_tools, *legacy_tools, *extra]}
+        app.state.autopilot_tool_fns = {t.name: t.fn for t in autopilot_tools}
         return build_chat_llm(
             api_key=settings.llm_api_key,
             model=settings.llm_model,
             base_url=settings.llm_base_url,
-            tools=tools,
+            tools=llm_tools,
             mode_provider=lambda: controller.mode,
+            autopilot=autopilot_on,
         )
 
     _chat_llm = _make_chat_llm()  # type: ignore[no-untyped-call]
@@ -1177,6 +1507,40 @@ def create_app(*, background: bool = False) -> FastAPI:  # noqa: PLR0915
             return error_response("not_found", err or "position not found", 404)
         await bus.publish(Event("proposal_created", to_jsonable(prop)))
         return envelope(ok=True, data=to_jsonable(prop))
+
+    # ── Withdrawals (the only action that always needs a human confirm) ──
+
+    @app.get("/v1/withdrawals")
+    async def list_withdrawals(authorization: str | None = Header(None)) -> Any:
+        if _verify_auth(authorization) is None:
+            return _unauth()
+        return envelope(ok=True, data=[i.to_dict() for i in withdraw_svc.list()])
+
+    @app.post("/v1/withdrawals/{withdraw_id}/confirm")
+    async def confirm_withdrawal(withdraw_id: str, authorization: str | None = Header(None),
+                                 x_confirm: str | None = Header(None, alias="X-Confirm")) -> Any:
+        if _verify_auth(authorization) is None:
+            return _unauth()
+        gate = _require_xconfirm(x_confirm)
+        if gate is not None:
+            return gate
+        live = controller.mode == "LIVE"
+        intent, err = await asyncio.to_thread(withdraw_svc.execute, withdraw_id, live=live)
+        if intent is None:
+            return error_response("not_found", err or "withdrawal not found", 404)
+        await bus.publish(Event("withdrawal_updated", intent.to_dict()))
+        if err:
+            return error_response("withdraw_failed", err, 409)
+        return envelope(ok=True, data=intent.to_dict())
+
+    @app.post("/v1/withdrawals/{withdraw_id}/cancel")
+    async def cancel_withdrawal(withdraw_id: str, authorization: str | None = Header(None)) -> Any:
+        if _verify_auth(authorization) is None:
+            return _unauth()
+        intent = withdraw_svc.cancel(withdraw_id)
+        if intent is None:
+            return error_response("not_found", "withdrawal missing or no longer pending", 404)
+        return envelope(ok=True, data=intent.to_dict())
 
     @app.get("/v1/limits")
     async def get_limits(authorization: str | None = Header(None)) -> Any:

@@ -20,6 +20,15 @@ from pred_agent.control_api.app import create_app
 from pred_agent.control_api.controller import AgentController
 from pred_agent.scanner import DiscoveredParent
 
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def _supervised_mode(monkeypatch: pytest.MonkeyPatch) -> None:
+    """These tests cover the supervised (pending-card) chat; autopilot has its own test file."""
+    monkeypatch.setenv("CHAT_AUTOPILOT", "false")
+
+
 READ_TOOLS = {
     "list_fixtures", "get_fixture", "get_book", "get_status",
     "get_positions", "get_orders", "get_rules", "get_limits", "get_proposals",

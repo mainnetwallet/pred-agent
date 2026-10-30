@@ -298,6 +298,8 @@ class RuleRepo:
                         last_eval_note=r.last_eval_note,
                         order_id=r.order_id,
                         blocked_since=_aware(r.blocked_since),
+                        exec_mode=r.exec_mode or "market",
+                        resting_order_id=r.resting_order_id,
                     )
                     for r in rows
                 }
@@ -329,6 +331,8 @@ class RuleRepo:
                 row.last_eval_note = rule.last_eval_note
                 row.order_id = rule.order_id
                 row.blocked_since = rule.blocked_since
+                row.exec_mode = rule.exec_mode
+                row.resting_order_id = rule.resting_order_id
                 sess.commit()
         except (OperationalError, ProgrammingError) as exc:
             _warn_missing_tables(exc)

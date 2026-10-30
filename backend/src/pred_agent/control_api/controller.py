@@ -24,6 +24,7 @@ from typing import TYPE_CHECKING, Any
 
 from pred_agent.auth.mode import resolve_auth_mode
 from pred_agent.config import Settings
+from pred_agent.control_api.autopilot import Autopilot
 from pred_agent.execution.live_executor import LiveOrderIntent
 from pred_agent.execution.live_runtime import LiveRuntime, MarketContext, MarketLookup
 from pred_agent.execution.paper_executor import PaperExecutor
@@ -94,6 +95,8 @@ class AgentController:
         }
         # Hard upper bounds: config can lower these, nothing can raise them.
         self._hard_max = dict(self.limits)
+        # Chat autopilot: direct execution + automated exits (see control_api/autopilot.py).
+        self.autopilot = Autopilot(self)
         # Feed freshness: set by scanner/book-feed tasks
         self._last_feed_update: datetime | None = None
         self._feed_diag: dict[str, Any] | None = None  # last scan stats / error
@@ -258,7 +261,9 @@ class AgentController:
 
     def approve(self, proposal_id: str, via: str, amount: Decimal | None = None) -> Proposal | None:
         self.last_error = None
-        if self.paused:
+        existing = self.proposals.get(proposal_id)
+        # Pause blocks new entries only; exits (reduce-only) must still be able to run.
+        if self.paused and not (existing is not None and self._is_exit(existing)):
             self.last_error = "agent is paused"
             return None
         cap = Decimal(str(self.limits["max_trade_usd"]))
@@ -271,7 +276,20 @@ class AgentController:
         prop = self.proposals.approve(proposal_id, via=via, new_amount_usd=amount)
         if prop is None:
             return None
-        if self.mode == "PAPER":
+        if self.mode == "PAPER" and self._is_exit(prop):
+            order = self.executor.place(
+                proposal_id=prop.id, market_id=prop.market_id, side=prop.side,
+                price_cents=prop.price_cents, quantity=prop.quantity,
+                amount_usd=prop.amount_usd, order_type=prop.order_type,
+            )
+            pos = self.positions.get_position(prop.market_id)
+            if pos is not None and pos.status == "open" and getattr(order, "status", "") == "filled":
+                pnl = self.rules.compute_pnl(
+                    position=pos, current_price_cents=prop.price_cents,
+                    fee_rate_bps=int(self._fee_target_bps(prop.market_id)),
+                )
+                self.positions.close_position(prop.market_id, realized_pnl_usd=pnl["profit_usd"])
+        elif self.mode == "PAPER":
             self.executor.place(
                 proposal_id=prop.id, market_id=prop.market_id, side=prop.side,
                 price_cents=prop.price_cents, quantity=prop.quantity,
@@ -295,6 +313,12 @@ class AgentController:
     @staticmethod
     def _is_exit(prop: Proposal) -> bool:
         return any(r.startswith("exit requested via") for r in prop.reasons)
+
+    @staticmethod
+    def _is_user_priced(prop: Proposal) -> bool:
+        """Limit price chosen by the human (chat/app): the one-sided/spread/'book moved' guards
+        are for agent-chosen prices and do not apply to a resting order at the user's price."""
+        return prop.order_type == "limit" and any(r.startswith("user limit price") for r in prop.reasons)
 
     @staticmethod
     def _is_manual(prop: Proposal) -> bool:
@@ -366,6 +390,7 @@ class AgentController:
             fee_rate_bps=0,  # recomputed from fee_target_bps
             fee_target_bps=ctx.fee_target_bps,
             reduce_only=is_exit,
+            user_priced=self._is_user_priced(prop),
             p_fair=prop.p_fair,
             min_edge_pp=None if self._is_manual(prop) else Decimal(str(self.settings.min_edge_pp)),
         )
@@ -440,6 +465,8 @@ class AgentController:
         amount_usd: Decimal,
         price_cents: Decimal,
         created_via: str = "chat",
+        order_type: str = "limit",
+        user_priced: bool = False,
     ) -> tuple[Proposal | None, str | None]:
         """Create a PENDING trade proposal from a chat intent. Returns (proposal, error)."""
         if self.paused:
@@ -455,11 +482,13 @@ class AgentController:
         est_fee = amount_usd * self._fee_target_bps(market_id) / Decimal(10000)
         prop = self.proposals.create(
             mode=self.mode, advisory=False, fixture_id=fixture_id, market_id=market_id,
-            side=side, order_type="limit", price_cents=price_cents, quantity=qty,
+            side=side, order_type=order_type, price_cents=price_cents, quantity=qty,
             amount_usd=amount_usd, est_fee_usd=est_fee, edge_pp=Decimal("0"),
             p_fair=price_cents / 100,
             max_suggested_usd=cap, binding_cap=None,
-            reasons=[f"requested via {created_via}"], risks=None,
+            reasons=[f"requested via {created_via}"]
+            + ([f"user limit price {price_cents}c"] if user_priced else []),
+            risks=None,
         )
         return prop, None
 
@@ -483,6 +512,29 @@ class AgentController:
         )
         return prop, None
 
+    def exit_proposal(
+        self, market_id: str, *, order_type: str, price_cents: Decimal, via: str,
+        user_priced: bool = False,
+    ) -> tuple[Proposal | None, str | None]:
+        """Create a reduce-only exit proposal with an explicit order type and price."""
+        pos = self.positions.get_position(market_id)
+        if pos is None or pos.status != "open":
+            return None, f"no open position for market {market_id}"
+        exit_side = "short" if pos.side == "long" else "long"
+        est_fee = pos.cost_usd * self._fee_target_bps(market_id) / Decimal(10000)
+        prop = self.proposals.create(
+            mode=self.mode, advisory=False, fixture_id=pos.parent_id, market_id=market_id,
+            side=exit_side, order_type=order_type, price_cents=price_cents, quantity=pos.quantity,
+            amount_usd=pos.cost_usd, est_fee_usd=est_fee, edge_pp=Decimal("0"),
+            p_fair=price_cents / 100,
+            max_suggested_usd=Decimal(str(self.limits["max_trade_usd"])),
+            binding_cap=None,
+            reasons=[f"exit requested via {via}"]
+            + ([f"user limit price {price_cents}c"] if user_priced else []),
+            risks=None,
+        )
+        return prop, None
+
     def create_rule_from_chat(  # noqa: PLR0911
         self,
         *,
@@ -492,14 +544,17 @@ class AgentController:
         trigger_value: Decimal,
         size: str = "all",
         created_via: str = "chat",
+        exec_mode: str = "market",
     ) -> tuple[Rule | None, str | None]:
         """Create a PENDING exit rule from a chat intent. Returns (rule, error)."""
         pos = self.positions.get_position(market_id)
         if pos is None:
             return None, f"no open position for market {market_id}"
-        if kind not in ("take_profit", "stop_loss"):
-            return None, f"kind must be take_profit or stop_loss (got {kind})"
-        if trigger_type not in ("profit_usd", "loss_usd", "price_cents", "profit_pct"):
+        if kind not in ("take_profit", "stop_loss", "time_exit"):
+            return None, f"kind must be take_profit, stop_loss or time_exit (got {kind})"
+        if trigger_type not in (
+            "profit_usd", "loss_usd", "price_cents", "profit_pct", "loss_pct", "deadline_ts"
+        ):
             return None, f"unsupported trigger_type {trigger_type}"
         if trigger_value <= 0:
             return None, "trigger_value must be > 0"
@@ -519,6 +574,7 @@ class AgentController:
             size=size,
             created_via=created_via,
             mode=self.mode,
+            exec_mode=exec_mode,
         )
         return rule, None
 

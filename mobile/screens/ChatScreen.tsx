@@ -129,6 +129,25 @@ function CardView({
     );
   }
 
+  if (card.type === "trade_result") {
+    const d = card.data as any;
+    const bits: string[] = [];
+    if (d.side) bits.push(`${d.side === "long" ? "YES" : "NO"} ${d.order_type ?? ""}${d.price_cents ? ` @ ${d.price_cents}¢` : ""}`);
+    if (d.filled_shares && d.filled_shares !== "0") bits.push(`${d.filled_shares} shares filled`);
+    if (d.position) bits.push(`position ${d.position.shares} sh @ ${d.position.avg_price_cents}¢ ($${d.position.cost_usd})`);
+    if (d.remaining_shares) bits.push(`${d.remaining_shares} shares still open`);
+    if (d.plan) bits.push((d.plan as string[]).join("; "));
+    if (d.exit_plan?.plan) bits.push(`exit plan: ${(d.exit_plan.plan as string[]).join("; ")}${d.exit_plan.armed ? " (armed)" : " (arms when filled)"}`);
+    if (d.reason) bits.push(`why: ${d.reason}`);
+    if (d.note) bits.push(d.note);
+    return (
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>{`${String(d.kind ?? "trade").replace(/_/g, " ")} · ${d.status ?? "?"}`}</Text>
+        <Text style={styles.cardBody}>{bits.join(" · ") || (d.ok ? "OK" : "Not completed")}</Text>
+      </View>
+    );
+  }
+
   if (card.type === "action") {
     const d = card.data as any;
     return (
@@ -340,6 +359,18 @@ export default function ChatScreen() {
     } else if (action === "cancel_rule") {
       const r = await api.cancelRule(d.rule_id);
       Alert.alert(r.ok ? "Cancelled" : "Error", r.ok ? "Rule cancelled." : (r.error?.message ?? "Failed"));
+    } else if (action === "withdraw") {
+      Alert.alert("Withdraw funds", String(d.label ?? "Send funds out of your PRED account?"), [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Withdraw",
+          style: "destructive",
+          onPress: async () => {
+            const r = await api.confirmWithdrawal(d.withdraw_id, "biometric-confirmed");
+            Alert.alert(r.ok ? "Withdrawal sent" : "Error", r.ok ? String((r.data as any)?.note ?? "Done.") : (r.error?.message ?? "Failed"));
+          },
+        },
+      ]);
     }
   }, []);
 
