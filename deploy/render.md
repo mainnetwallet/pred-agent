@@ -19,7 +19,7 @@ Ekta Render web service e **website + mobile app API + Telegram bot** tinta-i ch
 | `LLM_API_KEY` | LLM provider er API key |
 | `LLM_MODEL` | model name (jemon `gpt-4o-mini`, `deepseek-chat`) — **tool-calling support dorkar** |
 | `LLM_BASE_URL` | provider er API root, jemon `https://api.openai.com/v1` ba `https://openrouter.ai/api/v1` |
-| `PRIVATE_KEY`, `BASE_RPC_URL` | agent er jonno. `PRIVATE_KEY` LIVE er jonno lagbe (PAPER e na); `BASE_RPC_URL` optional (on-chain approval check) |
+| `PRIVATE_KEY`, `BASE_RPC_URL` | agent er jonno. `PRIVATE_KEY` LIVE er jonno lagbe (PAPER e na); `BASE_RPC_URL` render.yaml e already `https://base.drpc.org` set kora (on-chain approval check + chat withdraw) |
 | `PRED_AUTH_MODE` | optional, default `clob`. LIVE order shudhu `clob` mode e hoy. `jwt` shudhu enablement CLI er jonno |
 | `PRED_API_KEY` | **optional**, shudhu `PRED_AUTH_MODE=jwt` hole lagbe. CLOB e lagbe na; set thakleo mode bodlay na |
 

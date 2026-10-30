@@ -49,5 +49,5 @@ services:
         sync: false
       - key: LLM_BASE_URL    # e.g. https://api.openai.com/v1 or https://openrouter.ai/api/v1
         value: https://api.openai.com/v1
-      - key: BASE_RPC_URL
-        sync: false
+      - key: BASE_RPC_URL    # public Base RPC (no key, not a secret): withdrawals + on-chain checks
+        value: https://base.drpc.org
